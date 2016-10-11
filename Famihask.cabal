@@ -1,17 +1,36 @@
 name:                Famihask
 version:             0.1.0.0
 synopsis:            NES emulator in Haskell
-homepage:            http://github.com/rkoeninger/Famihask
+homepage:            https://github.com/rkoeninger/Famihask
 license:             MIT
 license-file:        LICENSE.txt
-author:              rkoeninger
+author:              Robert Koeninger
 maintainer:          rkoeninger@att.net
 category:            Game
 build-type:          Simple
+extra-source-files:  README.md
 cabal-version:       >=1.10
+
+source-repository head
+  type: git
+  location: https://github.com/rkoeninger/Famihask
+
+library
+  exposed-modules:     Famihask, Memory
+  other-modules:       APU, PPU
+  build-depends:       base, vector, primitive, bytestring
+  hs-source-dirs:      src/lib
+  default-language:    Haskell2010
 
 executable Famihask
   main-is:             Main.hs
-  build-depends:       base, GLUT, OpenGL
-  hs-source-dirs:      src
+  build-depends:       base, Famihask
+  hs-source-dirs:      src/main
+  default-language:    Haskell2010
+
+test-suite test-all
+  type:                exitcode-stdio-1.0
+  main-is:             Test.hs
+  build-depends:       base, Famihask
+  hs-source-dirs:      test
   default-language:    Haskell2010
