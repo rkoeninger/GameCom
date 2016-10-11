@@ -7,7 +7,7 @@ module Memory (
     loadWord)
 where
 
-import           Data.Bits
+import           Data.Bits                   ((.|.), (.&.), shiftR, shiftL)
 import           Data.Word                   (Word8, Word16)
 import           Data.Functor                ((<$>))
 import           Control.Monad.Primitive     (PrimState)
@@ -25,20 +25,14 @@ store = M.write
 load :: Ram -> Int -> IO Word8
 load = M.read
 
-byteToWord :: Word8 -> Word16
-byteToWord = fromIntegral
-
-wordToByte :: Word16 -> Word8
-wordToByte = fromIntegral
-
 storeWord :: Ram -> Int -> Word16 -> IO ()
 storeWord ram index word =
-    let b0 = wordToByte $ word .&. 0xff in
-    let b1 = wordToByte $ word `shiftR` 8 in
+    let b0 = fromIntegral $ word .&. 0xff in
+    let b1 = fromIntegral $ word `shiftR` 8 in
     store ram index b0 >> store ram (index + 1) b1
 
 loadWord :: Ram -> Int -> IO Word16
 loadWord ram index = do
-    b0 <- byteToWord <$> load ram index
-    b1 <- byteToWord <$> load ram (index + 1)
+    b0 <- fromIntegral <$> load ram index
+    b1 <- fromIntegral <$> load ram (index + 1)
     return $ b0 .|. (b1 `shiftL` 8)
