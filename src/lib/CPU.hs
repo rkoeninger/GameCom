@@ -191,23 +191,6 @@ adc (loader, storer) ram regs = do
     let regs = setFlag overflowMask overflow regs
     return $ (setZN result8 regs) { accReg = result8 }
 
-{-
-    fn adc<AM:AddressingMode<M>>(&mut self, am: AM) {
-        let val = am.load(self);
-        let mut result = self.regs.a as u32 + val as u32;
-        if self.get_flag(CARRY_FLAG) {
-            result += 1;
-        }
-
-        self.set_flag(CARRY_FLAG, (result & 0x100) != 0);
-
-        let result = result as u8;
-        let a = self.regs.a;
-        self.set_flag(OVERFLOW_FLAG, (a ^ val) & 0x80 == 0 && (a ^ result) & 0x80 == 0x80);
-        self.regs.a = self.set_zn(result);
-    }
--}
-
 sbc (loader, storer) ram regs = do
     (regs, val) <- loader ram regs
     let a = accReg regs
@@ -218,23 +201,6 @@ sbc (loader, storer) ram regs = do
     let regs = setFlag overflowMask overflow regs
     return $ (setZN result8 regs) { accReg = result8 }
 
-{-
-    fn sbc<AM:AddressingMode<M>>(&mut self, am: AM) {
-        let val = am.load(self);
-        let a = self.regs.a;
-        let mut result = a as u32 - val as u32;
-        if !self.get_flag(CARRY_FLAG) {
-            result -= 1;
-        }
-
-        self.set_flag(CARRY_FLAG, (result & 0x100) == 0);
-
-        let result = result as u8;
-        let a = self.regs.a;
-        self.set_flag(OVERFLOW_FLAG, (a ^ result) & 0x80 != 0 && (a ^ val) & 0x80 == 0x80);
-        self.regs.a = self.set_zn(result);
--}
-
 compareHelper loader ram regs x = do
     (regs, y) <- loader ram regs
     let result = (byteToWord x) - (byteToWord y)
@@ -244,13 +210,6 @@ compareHelper loader ram regs x = do
 cmp (loader, _) ram regs = compareHelper loader ram regs (accReg regs)
 cpx (loader, _) ram regs = compareHelper loader ram regs (xReg regs)
 cpy (loader, _) ram regs = compareHelper loader ram regs (yReg regs)
-
-{-  fn cmp_base<AM:AddressingMode<M>>(&mut self, x: u8, am: AM)
-        let y = am.load(self);
-        let result = x as u32 - y as u32;
-        self.set_flag(CARRY_FLAG, (result & 0x100) == 0);
-        let _ = self.set_zn(result as u8);
--}
 
 bitwiseHelper loader ram regs f = do
     (regs, val) <- loader ram regs
@@ -268,15 +227,6 @@ bit (loader, _) ram regs = do
                setFlag negativeMask ((val .&. 0x80) /= 0) .
                setFlag zeroMask ((val .&. a) == 0) $ regs
     return regs
-
-
-{-  fn bit<AM:AddressingMode<M>>(&mut self, am: AM) {
-        let val = am.load(self);
-        let a = self.regs.a;
-        self.set_flag(ZERO_FLAG, (val & a) == 0);
-        self.set_flag(NEGATIVE_FLAG, (val & 0x80) != 0);
-        self.set_flag(OVERFLOW_FLAG, (val & 0x40) != 0);
--}
 
 shiftLeftHelper (loader, storer) ram regs lsb = do
     (regs, val) <- loader ram regs
@@ -296,40 +246,6 @@ rol addresser ram regs = shiftLeftHelper addresser ram regs (getFlag carryMask r
 ror addresser ram regs = shiftRightHelper addresser ram regs (getFlag carryMask regs)
 asl addresser ram regs = shiftLeftHelper addresser ram regs False
 lsr addresser ram regs = shiftRightHelper addresser ram regs False
-
-{-  fn shl_base<AM:AddressingMode<M>>(&mut self, lsb: bool, am: AM) {
-        let val = am.load(self);
-        let new_carry = (val & 0x80) != 0;
-        let mut result = val << 1;
-        if lsb {
-            result |= 1;
-        }
-        self.set_flag(CARRY_FLAG, new_carry);
-        let val = self.set_zn(result as u8);
-        am.store(self, val)
-    }
-    fn shr_base<AM:AddressingMode<M>>(&mut self, msb: bool, am: AM) {
-        let val = am.load(self);
-        let new_carry = (val & 0x1) != 0;
-        let mut result = val >> 1;
-        if msb {
-            result |= 0x80;
-        }
-        self.set_flag(CARRY_FLAG, new_carry);
-        let val = self.set_zn(result as u8);
-        am.store(self, val)
-    }
-    fn rol<AM:AddressingMode<M>>(&mut self, am: AM) {
-        let val = self.get_flag(CARRY_FLAG);
-        self.shl_base(val, am)
-    }
-    fn ror<AM:AddressingMode<M>>(&mut self, am: AM) {
-        let val = self.get_flag(CARRY_FLAG);
-        self.shr_base(val, am)
-    }
-    fn asl<AM:AddressingMode<M>>(&mut self, am: AM) { self.shl_base(false, am) }
-    fn lsr<AM:AddressingMode<M>>(&mut self, am: AM) { self.shr_base(false, am) } -}
-
 
 inc (loader, storer) ram regs = do
     (regs, val) <- loader ram regs
@@ -615,4 +531,4 @@ eval ram regs opCode =
         0x08 -> php ram regs
         0x28 -> plp ram regs
         0xea -> return regs
-        _ -> error ("Invalid op code: " ++ (show opCode))
+        _ -> error $ "Invalid op code: " ++ show opCode
