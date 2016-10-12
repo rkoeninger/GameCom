@@ -22,7 +22,7 @@ overflowMask = 0x40 :: Word8
 negativeMask = 0x80 :: Word8
 
 getFlag :: Word8 -> Registers -> Bool
-getFlag mask regs = ((flagReg regs) .&. mask) == 0
+getFlag mask regs = (flagReg regs .&. mask) == 0
 
 setFlag :: Word8 -> Bool -> Registers -> Registers
 setFlag mask val regs =
@@ -64,27 +64,27 @@ branch ram regs cond =
 push :: Ram -> Registers -> Word8 -> IO (Ram, Registers)
 push ram regs val = do
     let s = sReg regs
-    store ram (0x0100 + (fromIntegral s)) val
+    store ram (0x0100 + fromIntegral s) val
     return (ram, regs { sReg = s - 1 })
 
 -- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
 pushWord :: Ram -> Registers -> Word16 -> IO (Ram, Registers)
 pushWord ram regs val = do
     let s = sReg regs
-    storeWord ram (0x0100 + (fromIntegral s) - 1) val
+    storeWord ram (0x0100 + fromIntegral s - 1) val
     return (ram, regs { sReg = s - 2 })
 
 pop :: Ram -> Registers -> IO (Ram, Registers, Word8)
 pop ram regs = do
     let s = sReg regs
-    val <- load ram (0x0100 + (fromIntegral s) + 1)
+    val <- load ram (0x0100 + fromIntegral s + 1)
     return (ram, regs { sReg = s + 1 }, val)
 
 -- FIXME: see two functions up
 popWord :: Ram -> Registers -> IO (Ram, Registers, Word16)
 popWord ram regs = do
     let s = sReg regs
-    val <- loadWord ram (0x0100 + (fromIntegral s) + 1)
+    val <- loadWord ram (0x0100 + fromIntegral s + 1)
     return (ram, regs { sReg = s + 2 }, val)
 
 data AddressMode = AccumulatorMode | ImmediateMode | MemoryMode
