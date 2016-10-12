@@ -21,17 +21,21 @@ breakMask    = 0x10 :: Word8
 overflowMask = 0x40 :: Word8
 negativeMask = 0x80 :: Word8
 
+nmiVector   = 0xfffa :: Word16
+resetVector = 0xfffc :: Word16
+breakVector = 0xfffe :: Word16
+
 getFlag :: Word8 -> Registers -> Bool
 getFlag mask regs = (flagReg regs .&. mask) == 0
 
 setFlag :: Word8 -> Bool -> Registers -> Registers
 setFlag mask val regs =
-    let current = flagReg regs in
+    let flags = flagReg regs in
     regs {
         flagReg =
             if val
-                then current .|. mask
-                else current .&. (complement mask)
+                then flags .|. mask
+                else flags .&. (complement mask)
     }
 
 setFlags :: Word8 -> Registers -> Registers
@@ -93,6 +97,12 @@ lda AccumulatorMode regs ram = return ()
 lda ImmediateMode regs ram = return ()
 lda MemoryMode regs ram = return ()
 
+inc AccumulatorMode ram regs = let val = (accReg regs) + 1 in return (ram, (setZN val regs) { accReg = val })
+inc _ ram regs = error "other address modes not defined"
+
+dec AccumulatorMode ram regs = let val = (accReg regs) + 1 in return (ram, (setZN val regs) { accReg = val })
+dec _ ram regs = error "other address modes not defined"
+
 inx regs = let x = xReg regs + 1 in (setZN x regs) { xReg = x }
 dex regs = let x = xReg regs - 1 in (setZN x regs) { xReg = x }
 iny regs = let y = yReg regs + 1 in (setZN y regs) { yReg = y }
@@ -127,4 +137,79 @@ jmpi ram regs = do
     -- NOTE: apparently made necessary by bug in 6502 chip ???
     lo <- load ram addr
     hi <- load ram ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff))
-    return (ram, regs { pcReg = fromIntegral $ (hi `shiftL` 8) .|. lo })
+    let addr = fromIntegral $ (hi `shiftL` 8) .|. lo
+
+    return (ram, regs { pcReg = addr })
+
+jsr ram regs = do
+    (ram, regs, addr) <- loadWordIncPc ram regs
+    let pc = pcReg regs
+    (ram, regs) <- pushWord ram regs (pc - 1)
+    return (ram, regs { pcReg = addr })
+
+rts ram regs = do
+    (ram, regs, addr) <- popWord ram regs
+    return (ram, regs { pcReg = addr + 1 })
+
+brk ram regs = do
+    let pc = pcReg regs
+    (ram, regs) <- pushWord ram regs (pc + 1)
+    let flags = flagReg regs
+    (ram, regs) <- push ram regs flags -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
+    let regs = setFlag irqMask True regs
+    addr <- loadWord ram breakVector
+    return (ram, regs { pcReg = addr })
+
+rit ram regs = do
+    (ram, regs, flags) <- pop ram regs
+    let regs = setFlags flags regs
+    (ram, regs, addr) <- popWord ram regs
+    return (ram, regs { pcReg = addr }) -- NOTE: no +1
+
+pha ram regs = push ram regs (accReg regs)
+
+pla ram regs = do
+    (ram, regs, val) <- pop ram regs
+    return (ram, (setZN val regs) { accReg = val })
+
+php ram regs = push ram regs (flagReg regs .|. breakMask)
+
+plp ram regs = do
+    (ram, regs, flags) <- pop ram regs
+    return (ram, setFlags flags regs)
+
+nop = id
+
+{-The main fetch-and-decode routine
+    pub fn step(&mut self) {
+        self.trace();
+
+        let op = self.loadb_bump_pc();
+        decode_op!(op, self);
+
+        self.cy += CYCLE_TABLE[op as usize] as Cycles;
+    }
+-}
+
+reset ram regs = do
+    addr <- loadWord ram resetVector
+    return (ram, regs { pcReg = addr })
+
+nmi ram regs = do
+    let pc = pcReg regs
+    let flags = flagReg regs
+    (ram, regs) <- pushWord ram regs pc
+    (ram, regs) <- push ram regs flags
+    addr <- loadWord ram nmiVector
+    return (ram, regs { pcReg = addr })
+
+irq ram regs =
+    if getFlag irqMask regs
+        then return (ram, regs)
+        else do
+            let pc = pcReg regs
+            let flags = flagReg regs
+            (ram, regs) <- pushWord ram regs pc
+            (ram, regs) <- push ram regs flags
+            addr <- loadWord ram breakVector
+            return (ram, regs { pcReg = addr })
