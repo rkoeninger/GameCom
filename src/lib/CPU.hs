@@ -65,15 +65,6 @@ loadWordIncPc ram regs = do
     val <- loadWord ram pc
     return (regs { pcReg = pc + 2 }, val)
 
-branch :: Ram -> Registers -> Bool -> IO Registers
-branch ram regs cond =
-    if cond
-        then return regs
-        else do
-            (regs, disp) <- loadByteIncPc ram regs
-            let pc = pcReg regs
-            return $ regs { pcReg = pc + (byteToWord disp) }
-
 pushByte :: Ram -> Registers -> Word8 -> IO Registers
 pushByte ram regs val = do
     let s = sReg regs
@@ -104,6 +95,12 @@ type Loader = Ram -> Registers -> IO (Registers, Word8)
 type Storer = Ram -> Registers -> Word8 -> IO Registers
 type Addresser = (Loader, Storer)
 type AddresserBuilder = Ram -> Registers -> IO (Registers, Addresser)
+type Instruction = Addresser -> Ram -> Registers -> IO Registers
+
+nullMode :: AddresserBuilder
+nullMode _ regs = return (regs, (loader, storer))
+    where loader _ _ = error "this instruction should not access memory"
+          storer _ _ _ = error "this instruction should not access memory"
 
 accumulatorMode :: AddresserBuilder
 accumulatorMode _ regs = return (regs, (loader, storer))
@@ -173,23 +170,23 @@ indirectIndexedYMode ram regs = do
     let addr = addr + (byteToWord y)
     return (regs, memoryMode addr)
 
-lda (loader, storer) ram regs = do
+lda (loader, _) ram regs = do
     (regs, val) <- loader ram regs
     return $ (setZN val regs) { accReg = val }
 
-ldx (loader, storer) ram regs = do
+ldx (loader, _) ram regs = do
     (regs, val) <- loader ram regs
     return $ (setZN val regs) { xReg = val }
 
-ldy (loader, storer) ram regs = do
+ldy (loader, _) ram regs = do
     (regs, val) <- loader ram regs
     return $ (setZN val regs) { yReg = val }
 
-sta (loader, storer) ram regs = storer ram regs (accReg regs)
-stx (loader, storer) ram regs = storer ram regs (xReg regs)
-sty (loader, storer) ram regs = storer ram regs (yReg regs)
+sta (_, storer) ram regs = storer ram regs (accReg regs)
+stx (_, storer) ram regs = storer ram regs (xReg regs)
+sty (_, storer) ram regs = storer ram regs (yReg regs)
 
-adc (loader, storer) ram regs = do
+adc (loader, _) ram regs = do
     (regs, val) <- loader ram regs
     let result = (byteToWord (accReg regs)) + (byteToWord val) + (if getFlag carryMask regs then 1 else 0)
     let regs = setFlag carryMask ((result .&. 0x0100) /= 0) regs
@@ -199,7 +196,7 @@ adc (loader, storer) ram regs = do
     let regs = setFlag overflowMask overflow regs
     return $ (setZN result8 regs) { accReg = result8 }
 
-sbc (loader, storer) ram regs = do
+sbc (loader, _) ram regs = do
     (regs, val) <- loader ram regs
     let a = accReg regs
     let result = (byteToWord a) - (byteToWord val) - (if getFlag carryMask regs then 0 else 1)
@@ -265,37 +262,47 @@ dec (loader, storer) ram regs = do
     let val = val - 1
     storer ram (setZN val regs) val
 
-inx regs = let x = xReg regs + 1 in (setZN x regs) { xReg = x }
-dex regs = let x = xReg regs - 1 in (setZN x regs) { xReg = x }
-iny regs = let y = yReg regs + 1 in (setZN y regs) { yReg = y }
-dey regs = let y = yReg regs - 1 in (setZN y regs) { yReg = y }
-tax regs = let acc = accReg regs in (setZN acc regs) { xReg = acc }
-tay regs = let acc = accReg regs in (setZN acc regs) { yReg = acc }
-txa regs = let x = xReg regs in (setZN x regs) { accReg = x }
-tya regs = let y = yReg regs in (setZN y regs) { accReg = y }
-txs regs = let x = xReg regs in regs { sReg = x }
-tsx regs = let s = sReg regs in (setZN s regs) { xReg = s }
-clc = setFlag carryMask False
-sec = setFlag carryMask True
-cli = setFlag irqMask False
-sei = setFlag irqMask True
-clv = setFlag overflowMask False
-cld = setFlag decimalMask False
-sed = setFlag decimalMask True
-bpl ram regs = branch ram regs $ not $ getFlag negativeMask regs
-bmi ram regs = branch ram regs $ getFlag negativeMask regs
-bvc ram regs = branch ram regs $ not $ getFlag overflowMask regs
-bvs ram regs = branch ram regs $ getFlag overflowMask regs
-bcc ram regs = branch ram regs $ not $ getFlag carryMask regs
-bcs ram regs = branch ram regs $ getFlag carryMask regs
-bne ram regs = branch ram regs $ not $ getFlag zeroMask regs
-beq ram regs = branch ram regs $ getFlag zeroMask regs
+inx _ _ regs = let x = xReg regs + 1 in return $ (setZN x regs) { xReg = x }
+dex _ _ regs = let x = xReg regs - 1 in return $ (setZN x regs) { xReg = x }
+iny _ _ regs = let y = yReg regs + 1 in return $ (setZN y regs) { yReg = y }
+dey _ _ regs = let y = yReg regs - 1 in return $ (setZN y regs) { yReg = y }
+tax _ _ regs = let acc = accReg regs in return $ (setZN acc regs) { xReg = acc }
+tay _ _ regs = let acc = accReg regs in return $ (setZN acc regs) { yReg = acc }
+txa _ _ regs = let x = xReg regs in return $ (setZN x regs) { accReg = x }
+tya _ _ regs = let y = yReg regs in return $ (setZN y regs) { accReg = y }
+txs _ _ regs = let x = xReg regs in return $ regs { sReg = x }
+tsx _ _ regs = let s = sReg regs in return $ (setZN s regs) { xReg = s }
+clc _ _ = return . setFlag carryMask False
+sec _ _ = return . setFlag carryMask True
+cli _ _ = return . setFlag irqMask False
+sei _ _ = return . setFlag irqMask True
+clv _ _ = return . setFlag overflowMask False
+cld _ _ = return . setFlag decimalMask False
+sed _ _ = return . setFlag decimalMask True
 
-jmp ram regs = do
+branch :: Ram -> Registers -> Bool -> IO Registers
+branch ram regs cond =
+    if cond
+        then return regs
+        else do
+            (regs, disp) <- loadByteIncPc ram regs
+            let pc = pcReg regs
+            return $ regs { pcReg = pc + (byteToWord disp) }
+
+bpl _ ram regs = branch ram regs $ not $ getFlag negativeMask regs
+bmi _ ram regs = branch ram regs $ getFlag negativeMask regs
+bvc _ ram regs = branch ram regs $ not $ getFlag overflowMask regs
+bvs _ ram regs = branch ram regs $ getFlag overflowMask regs
+bcc _ ram regs = branch ram regs $ not $ getFlag carryMask regs
+bcs _ ram regs = branch ram regs $ getFlag carryMask regs
+bne _ ram regs = branch ram regs $ not $ getFlag zeroMask regs
+beq _ ram regs = branch ram regs $ getFlag zeroMask regs
+
+jmp _ ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
     return $ regs { pcReg = addr }
 
-jmpi ram regs = do
+jpi _ ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
 
     -- NOTE: apparently made necessary by bug in 6502 chip ???
@@ -305,17 +312,17 @@ jmpi ram regs = do
 
     return $ regs { pcReg = addr }
 
-jsr ram regs = do
+jsr _ ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
     let pc = pcReg regs
     regs <- pushWord ram regs (pc - 1)
     return $ regs { pcReg = addr }
 
-rts ram regs = do
+rts _ ram regs = do
     (regs, addr) <- popWord ram regs
     return $ regs { pcReg = addr + 1 }
 
-brk ram regs = do
+brk _ ram regs = do
     let pc = pcReg regs
     regs <- pushWord ram regs (pc + 1)
     let flags = flagReg regs
@@ -324,25 +331,25 @@ brk ram regs = do
     addr <- loadWord ram breakVector
     return $ regs { pcReg = addr }
 
-rti ram regs = do
+rti _ ram regs = do
     (regs, flags) <- popByte ram regs
     let regs = setFlags flags regs
     (regs, addr) <- popWord ram regs
     return $ regs { pcReg = addr } -- NOTE: no +1
 
-pha ram regs = pushByte ram regs (accReg regs)
+pha _ ram regs = pushByte ram regs (accReg regs)
 
-pla ram regs = do
+pla _ ram regs = do
     (regs, val) <- popByte ram regs
     return $ (setZN val regs) { accReg = val }
 
-php ram regs = pushByte ram regs (flagReg regs .|. breakMask)
+php _ ram regs = pushByte ram regs (flagReg regs .|. breakMask)
 
-plp ram regs = do
+plp _ ram regs = do
     (regs, flags) <- popByte ram regs
     return $ setFlags flags regs
 
-nop ram regs = return regs
+nop _ ram regs = return regs
 
 {-The main fetch-and-decode routine
     pub fn step(&mut self) {
@@ -378,167 +385,162 @@ irq ram regs =
             addr <- loadWord ram breakVector
             return $ regs { pcReg = addr }
 
-app :: (Addresser -> Ram -> Registers -> IO Registers)
-    -> Ram
-    -> Registers
-    -> AddresserBuilder
-    -> IO Registers
-app op ram regs builder = do
+eval :: Ram -> Registers -> Word8 -> IO Registers
+eval ram regs opCode = do
+    let (op, builder) = decode opCode
     (regs, addresser) <- builder ram regs
     op addresser ram regs
 
-eval :: Ram -> Registers -> Word8 -> IO Registers
-eval ram regs opCode =
-    case opCode of
-        0xa1 -> app lda ram regs indexedIndirectXMode
-        0xa5 -> app lda ram regs zeroPageMode
-        0xa9 -> app lda ram regs immediateMode
-        0xad -> app lda ram regs absoluteMode
-        0xb1 -> app lda ram regs indirectIndexedYMode
-        0xb5 -> app lda ram regs zeroPageXMode
-        0xb9 -> app lda ram regs absoluteYMode
-        0xbd -> app lda ram regs absoluteXMode
-        0xa2 -> app ldx ram regs immediateMode
-        0xa6 -> app ldx ram regs zeroPageMode
-        0xb6 -> app ldx ram regs zeroPageYMode
-        0xae -> app ldx ram regs absoluteMode
-        0xbe -> app ldx ram regs absoluteYMode
-        0xa0 -> app ldy ram regs immediateMode
-        0xa4 -> app ldy ram regs zeroPageMode
-        0xb4 -> app ldy ram regs zeroPageXMode
-        0xac -> app ldy ram regs absoluteMode
-        0xbc -> app ldy ram regs absoluteXMode
-        0x85 -> app sta ram regs zeroPageMode
-        0x95 -> app sta ram regs zeroPageXMode
-        0x8d -> app sta ram regs absoluteMode
-        0x9d -> app sta ram regs absoluteXMode
-        0x99 -> app sta ram regs absoluteYMode
-        0x81 -> app sta ram regs indexedIndirectXMode
-        0x91 -> app sta ram regs indirectIndexedYMode
-        0x86 -> app stx ram regs zeroPageMode
-        0x96 -> app stx ram regs zeroPageYMode
-        0x8e -> app stx ram regs absoluteMode
-        0x84 -> app sty ram regs zeroPageMode
-        0x94 -> app sty ram regs zeroPageXMode
-        0x8c -> app sty ram regs absoluteMode
-        0x69 -> app adc ram regs immediateMode
-        0x65 -> app adc ram regs zeroPageMode
-        0x75 -> app adc ram regs zeroPageXMode
-        0x6d -> app adc ram regs absoluteMode
-        0x7d -> app adc ram regs absoluteXMode
-        0x79 -> app adc ram regs absoluteYMode
-        0x61 -> app adc ram regs indexedIndirectXMode
-        0x71 -> app adc ram regs indirectIndexedYMode
-        0xe9 -> app sbc ram regs immediateMode
-        0xe5 -> app sbc ram regs zeroPageMode
-        0xf5 -> app sbc ram regs zeroPageXMode
-        0xed -> app sbc ram regs absoluteMode
-        0xfd -> app sbc ram regs absoluteXMode
-        0xf9 -> app sbc ram regs absoluteYMode
-        0xe1 -> app sbc ram regs indexedIndirectXMode
-        0xf1 -> app sbc ram regs indirectIndexedYMode
-        0xc9 -> app cmp ram regs immediateMode
-        0xc5 -> app cmp ram regs zeroPageMode
-        0xd5 -> app cmp ram regs zeroPageXMode
-        0xcd -> app cmp ram regs absoluteMode
-        0xdd -> app cmp ram regs absoluteXMode
-        0xd9 -> app cmp ram regs absoluteYMode
-        0xc1 -> app cmp ram regs indexedIndirectXMode
-        0xd1 -> app cmp ram regs indirectIndexedYMode
-        0xe0 -> app cpx ram regs immediateMode
-        0xe4 -> app cpx ram regs zeroPageMode
-        0xec -> app cpx ram regs absoluteMode
-        0xc0 -> app cpy ram regs immediateMode
-        0xc4 -> app cpy ram regs zeroPageMode
-        0xcc -> app cpy ram regs absoluteMode
-        0x29 -> app add ram regs immediateMode
-        0x25 -> app add ram regs zeroPageMode
-        0x35 -> app add ram regs zeroPageXMode
-        0x2d -> app add ram regs absoluteMode
-        0x3d -> app add ram regs absoluteXMode
-        0x39 -> app add ram regs absoluteYMode
-        0x21 -> app add ram regs indexedIndirectXMode
-        0x31 -> app add ram regs indirectIndexedYMode
-        0x09 -> app ora ram regs immediateMode
-        0x05 -> app ora ram regs zeroPageMode
-        0x15 -> app ora ram regs zeroPageXMode
-        0x0d -> app ora ram regs absoluteMode
-        0x1d -> app ora ram regs absoluteXMode
-        0x19 -> app ora ram regs absoluteYMode
-        0x01 -> app ora ram regs indexedIndirectXMode
-        0x11 -> app ora ram regs indirectIndexedYMode
-        0x49 -> app eor ram regs immediateMode
-        0x45 -> app eor ram regs zeroPageMode
-        0x55 -> app eor ram regs zeroPageXMode
-        0x4d -> app eor ram regs absoluteMode
-        0x5d -> app eor ram regs absoluteXMode
-        0x59 -> app eor ram regs absoluteYMode
-        0x41 -> app eor ram regs indexedIndirectXMode
-        0x51 -> app eor ram regs indirectIndexedYMode
-        0x24 -> app bit ram regs zeroPageMode
-        0x2c -> app bit ram regs absoluteMode
-        0x2a -> app rol ram regs accumulatorMode
-        0x26 -> app rol ram regs zeroPageMode
-        0x36 -> app rol ram regs zeroPageXMode
-        0x2e -> app rol ram regs absoluteMode
-        0x3e -> app rol ram regs absoluteXMode
-        0x6a -> app ror ram regs accumulatorMode
-        0x66 -> app ror ram regs zeroPageMode
-        0x76 -> app ror ram regs zeroPageXMode
-        0x6e -> app ror ram regs absoluteMode
-        0x7e -> app ror ram regs absoluteXMode
-        0x0a -> app asl ram regs accumulatorMode
-        0x06 -> app asl ram regs zeroPageMode
-        0x16 -> app asl ram regs zeroPageXMode
-        0x0e -> app asl ram regs absoluteMode
-        0x1e -> app asl ram regs absoluteXMode
-        0x4a -> app lsr ram regs accumulatorMode
-        0x46 -> app lsr ram regs zeroPageMode
-        0x56 -> app lsr ram regs zeroPageXMode
-        0x4e -> app lsr ram regs absoluteMode
-        0x5e -> app lsr ram regs absoluteXMode
-        0xe6 -> app inc ram regs zeroPageMode
-        0xf6 -> app inc ram regs zeroPageXMode
-        0xee -> app inc ram regs absoluteMode
-        0xfe -> app inc ram regs absoluteXMode
-        0xc6 -> app dec ram regs zeroPageMode
-        0xd6 -> app dec ram regs zeroPageXMode
-        0xce -> app dec ram regs absoluteMode
-        0xde -> app dec ram regs absoluteXMode
-        0xe8 -> return $ inx regs
-        0xca -> return $ dex regs
-        0xc8 -> return $ iny regs
-        0x88 -> return $ dey regs
-        0xaa -> return $ tax regs
-        0xa8 -> return $ tay regs
-        0x8a -> return $ txa regs
-        0x98 -> return $ tya regs
-        0x9a -> return $ txs regs
-        0xba -> return $ tsx regs
-        0x18 -> return $ clc regs
-        0x38 -> return $ sec regs
-        0x58 -> return $ cli regs
-        0x78 -> return $ sei regs
-        0xb8 -> return $ clv regs
-        0xd8 -> return $ cld regs
-        0xf8 -> return $ sed regs
-        0x10 -> bpl ram regs
-        0x30 -> bmi ram regs
-        0x50 -> bvc ram regs
-        0x70 -> bvs ram regs
-        0x90 -> bcc ram regs
-        0xb0 -> bcs ram regs
-        0xd0 -> bne ram regs
-        0xf0 -> beq ram regs
-        0x4c -> jmp ram regs
-        0x6c -> jmpi ram regs
-        0x20 -> jsr ram regs
-        0x60 -> rts ram regs
-        0x00 -> brk ram regs
-        0x40 -> rti ram regs
-        0x48 -> pha ram regs
-        0x68 -> pla ram regs
-        0x08 -> php ram regs
-        0x28 -> plp ram regs
-        0xea -> nop ram regs
-        _ -> error $ "Invalid op code: " ++ show opCode
+decode :: Word8 -> (Instruction, AddresserBuilder)
+decode 0xa1 = (lda, indexedIndirectXMode)
+decode 0xa5 = (lda, zeroPageMode)
+decode 0xa9 = (lda, immediateMode)
+decode 0xad = (lda, absoluteMode)
+decode 0xb1 = (lda, indirectIndexedYMode)
+decode 0xb5 = (lda, zeroPageXMode)
+decode 0xb9 = (lda, absoluteYMode)
+decode 0xbd = (lda, absoluteXMode)
+decode 0xa2 = (ldx, immediateMode)
+decode 0xa6 = (ldx, zeroPageMode)
+decode 0xb6 = (ldx, zeroPageYMode)
+decode 0xae = (ldx, absoluteMode)
+decode 0xbe = (ldx, absoluteYMode)
+decode 0xa0 = (ldy, immediateMode)
+decode 0xa4 = (ldy, zeroPageMode)
+decode 0xb4 = (ldy, zeroPageXMode)
+decode 0xac = (ldy, absoluteMode)
+decode 0xbc = (ldy, absoluteXMode)
+decode 0x85 = (sta, zeroPageMode)
+decode 0x95 = (sta, zeroPageXMode)
+decode 0x8d = (sta, absoluteMode)
+decode 0x9d = (sta, absoluteXMode)
+decode 0x99 = (sta, absoluteYMode)
+decode 0x81 = (sta, indexedIndirectXMode)
+decode 0x91 = (sta, indirectIndexedYMode)
+decode 0x86 = (stx, zeroPageMode)
+decode 0x96 = (stx, zeroPageYMode)
+decode 0x8e = (stx, absoluteMode)
+decode 0x84 = (sty, zeroPageMode)
+decode 0x94 = (sty, zeroPageXMode)
+decode 0x8c = (sty, absoluteMode)
+decode 0x69 = (adc, immediateMode)
+decode 0x65 = (adc, zeroPageMode)
+decode 0x75 = (adc, zeroPageXMode)
+decode 0x6d = (adc, absoluteMode)
+decode 0x7d = (adc, absoluteXMode)
+decode 0x79 = (adc, absoluteYMode)
+decode 0x61 = (adc, indexedIndirectXMode)
+decode 0x71 = (adc, indirectIndexedYMode)
+decode 0xe9 = (sbc, immediateMode)
+decode 0xe5 = (sbc, zeroPageMode)
+decode 0xf5 = (sbc, zeroPageXMode)
+decode 0xed = (sbc, absoluteMode)
+decode 0xfd = (sbc, absoluteXMode)
+decode 0xf9 = (sbc, absoluteYMode)
+decode 0xe1 = (sbc, indexedIndirectXMode)
+decode 0xf1 = (sbc, indirectIndexedYMode)
+decode 0xc9 = (cmp, immediateMode)
+decode 0xc5 = (cmp, zeroPageMode)
+decode 0xd5 = (cmp, zeroPageXMode)
+decode 0xcd = (cmp, absoluteMode)
+decode 0xdd = (cmp, absoluteXMode)
+decode 0xd9 = (cmp, absoluteYMode)
+decode 0xc1 = (cmp, indexedIndirectXMode)
+decode 0xd1 = (cmp, indirectIndexedYMode)
+decode 0xe0 = (cpx, immediateMode)
+decode 0xe4 = (cpx, zeroPageMode)
+decode 0xec = (cpx, absoluteMode)
+decode 0xc0 = (cpy, immediateMode)
+decode 0xc4 = (cpy, zeroPageMode)
+decode 0xcc = (cpy, absoluteMode)
+decode 0x29 = (add, immediateMode)
+decode 0x25 = (add, zeroPageMode)
+decode 0x35 = (add, zeroPageXMode)
+decode 0x2d = (add, absoluteMode)
+decode 0x3d = (add, absoluteXMode)
+decode 0x39 = (add, absoluteYMode)
+decode 0x21 = (add, indexedIndirectXMode)
+decode 0x31 = (add, indirectIndexedYMode)
+decode 0x09 = (ora, immediateMode)
+decode 0x05 = (ora, zeroPageMode)
+decode 0x15 = (ora, zeroPageXMode)
+decode 0x0d = (ora, absoluteMode)
+decode 0x1d = (ora, absoluteXMode)
+decode 0x19 = (ora, absoluteYMode)
+decode 0x01 = (ora, indexedIndirectXMode)
+decode 0x11 = (ora, indirectIndexedYMode)
+decode 0x49 = (eor, immediateMode)
+decode 0x45 = (eor, zeroPageMode)
+decode 0x55 = (eor, zeroPageXMode)
+decode 0x4d = (eor, absoluteMode)
+decode 0x5d = (eor, absoluteXMode)
+decode 0x59 = (eor, absoluteYMode)
+decode 0x41 = (eor, indexedIndirectXMode)
+decode 0x51 = (eor, indirectIndexedYMode)
+decode 0x24 = (bit, zeroPageMode)
+decode 0x2c = (bit, absoluteMode)
+decode 0x2a = (rol, accumulatorMode)
+decode 0x26 = (rol, zeroPageMode)
+decode 0x36 = (rol, zeroPageXMode)
+decode 0x2e = (rol, absoluteMode)
+decode 0x3e = (rol, absoluteXMode)
+decode 0x6a = (ror, accumulatorMode)
+decode 0x66 = (ror, zeroPageMode)
+decode 0x76 = (ror, zeroPageXMode)
+decode 0x6e = (ror, absoluteMode)
+decode 0x7e = (ror, absoluteXMode)
+decode 0x0a = (asl, accumulatorMode)
+decode 0x06 = (asl, zeroPageMode)
+decode 0x16 = (asl, zeroPageXMode)
+decode 0x0e = (asl, absoluteMode)
+decode 0x1e = (asl, absoluteXMode)
+decode 0x4a = (lsr, accumulatorMode)
+decode 0x46 = (lsr, zeroPageMode)
+decode 0x56 = (lsr, zeroPageXMode)
+decode 0x4e = (lsr, absoluteMode)
+decode 0x5e = (lsr, absoluteXMode)
+decode 0xe6 = (inc, zeroPageMode)
+decode 0xf6 = (inc, zeroPageXMode)
+decode 0xee = (inc, absoluteMode)
+decode 0xfe = (inc, absoluteXMode)
+decode 0xc6 = (dec, zeroPageMode)
+decode 0xd6 = (dec, zeroPageXMode)
+decode 0xce = (dec, absoluteMode)
+decode 0xde = (dec, absoluteXMode)
+decode 0xe8 = (inx, nullMode)
+decode 0xca = (dex, nullMode)
+decode 0xc8 = (iny, nullMode)
+decode 0x88 = (dey, nullMode)
+decode 0xaa = (tax, nullMode)
+decode 0xa8 = (tay, nullMode)
+decode 0x8a = (txa, nullMode)
+decode 0x98 = (tya, nullMode)
+decode 0x9a = (txs, nullMode)
+decode 0xba = (tsx, nullMode)
+decode 0x18 = (clc, nullMode)
+decode 0x38 = (sec, nullMode)
+decode 0x58 = (cli, nullMode)
+decode 0x78 = (sei, nullMode)
+decode 0xb8 = (clv, nullMode)
+decode 0xd8 = (cld, nullMode)
+decode 0xf8 = (sed, nullMode)
+decode 0x10 = (bpl, nullMode)
+decode 0x30 = (bmi, nullMode)
+decode 0x50 = (bvc, nullMode)
+decode 0x70 = (bvs, nullMode)
+decode 0x90 = (bcc, nullMode)
+decode 0xb0 = (bcs, nullMode)
+decode 0xd0 = (bne, nullMode)
+decode 0xf0 = (beq, nullMode)
+decode 0x4c = (jmp, nullMode)
+decode 0x6c = (jpi, nullMode)
+decode 0x20 = (jsr, nullMode)
+decode 0x60 = (rts, nullMode)
+decode 0x00 = (brk, nullMode)
+decode 0x40 = (rti, nullMode)
+decode 0x48 = (pha, nullMode)
+decode 0x68 = (pla, nullMode)
+decode 0x08 = (php, nullMode)
+decode 0x28 = (plp, nullMode)
+decode 0xea = (nop, nullMode)
+decode opCode = error $ "Invalid op code: " ++ show opCode
