@@ -13,6 +13,15 @@ data Registers = Registers {
     pcReg   :: Word16
 }
 
+defaultRegs = Registers {
+    accReg  = 0x00,
+    xReg    = 0x00,
+    yReg    = 0x00,
+    sReg    = 0xfd,
+    flagReg = 0x24,
+    pcReg   = 0xc000
+}
+
 carryMask    = 0x01 :: Word8
 zeroMask     = 0x02 :: Word8
 irqMask      = 0x04 :: Word8
@@ -44,10 +53,10 @@ setFlags val regs = regs { flagReg = (val .|. 0x30) - 0x10 }
 setZN :: Word8 -> Registers -> Registers
 setZN val = (setFlag zeroMask $ val == 0) . (setFlag negativeMask $ (val .&. 0x80) /= 0)
 
-loadIncPc :: Ram -> Registers -> IO (Registers, Word8)
-loadIncPc ram regs = do
+loadByteIncPc :: Ram -> Registers -> IO (Registers, Word8)
+loadByteIncPc ram regs = do
     let pc = pcReg regs
-    val <- load ram pc
+    val <- loadByte ram pc
     return (regs { pcReg = pc + 1 }, val)
 
 loadWordIncPc :: Ram -> Registers -> IO (Registers, Word16)
@@ -61,14 +70,14 @@ branch ram regs cond =
     if cond
         then return regs
         else do
-            (regs, disp) <- loadIncPc ram regs
+            (regs, disp) <- loadByteIncPc ram regs
             let pc = pcReg regs
             return $ regs { pcReg = pc + (byteToWord disp) }
 
-push :: Ram -> Registers -> Word8 -> IO Registers
-push ram regs val = do
+pushByte :: Ram -> Registers -> Word8 -> IO Registers
+pushByte ram regs val = do
     let s = sReg regs
-    store ram (0x0100 + (byteToWord s)) val
+    storeByte ram (0x0100 + (byteToWord s)) val
     return $ regs { sReg = s - 1 }
 
 -- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
@@ -78,10 +87,10 @@ pushWord ram regs val = do
     storeWord ram (0x0100 + (byteToWord s) - 1) val
     return $ regs { sReg = s - 2 }
 
-pop :: Ram -> Registers -> IO (Registers, Word8)
-pop ram regs = do
+popByte :: Ram -> Registers -> IO (Registers, Word8)
+popByte ram regs = do
     let s = sReg regs
-    val <- load ram (0x0100 + (byteToWord s) + 1)
+    val <- loadByte ram (0x0100 + (byteToWord s) + 1)
     return (regs { sReg = s + 1 }, val)
 
 -- FIXME: see two functions up
@@ -94,72 +103,71 @@ popWord ram regs = do
 type Loader = Ram -> Registers -> IO (Registers, Word8)
 type Storer = Ram -> Registers -> Word8 -> IO Registers
 type Addresser = (Loader, Storer)
+type AddresserBuilder = Ram -> Registers -> IO (Registers, Addresser)
 
--- TODO: think about word sizes for addresses here
-
-accumulatorMode :: Addresser
-accumulatorMode = (loader, storer)
+accumulatorMode :: AddresserBuilder
+accumulatorMode _ regs = return (regs, (loader, storer))
     where loader _ regs = return (regs, accReg regs)
           storer _ regs val = return $ regs { accReg = val }
 
-immediateMode :: Addresser
-immediateMode = (loader, storer)
-    where loader = loadIncPc
+immediateMode :: AddresserBuilder
+immediateMode _ regs = return (regs, (loader, storer))
+    where loader = loadByteIncPc
           storer _ _ _ = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
 memoryMode addr = (loader, storer)
     where loader ram regs = do
-              val <- load ram addr
+              val <- loadByte ram addr
               return (regs, val)
           storer ram regs val = do
-              store ram addr val
+              storeByte ram addr val
               return regs
 
-zeroPageMode :: Ram -> Registers -> IO (Registers, Addresser)
+zeroPageMode :: AddresserBuilder
 zeroPageMode ram regs = do
-    (regs, addr) <- loadIncPc ram regs
+    (regs, addr) <- loadByteIncPc ram regs
     return (regs, memoryMode (byteToWord addr))
 
-zeroPageXMode :: Ram -> Registers -> IO (Registers, Addresser)
+zeroPageXMode :: AddresserBuilder
 zeroPageXMode ram regs = do
-    (regs, addr) <- loadIncPc ram regs
+    (regs, addr) <- loadByteIncPc ram regs
     let addr = addr + (xReg regs)
     return (regs, memoryMode (byteToWord addr))
 
-zeroPageYMode :: Ram -> Registers -> IO (Registers, Addresser)
+zeroPageYMode :: AddresserBuilder
 zeroPageYMode ram regs = do
-    (regs, addr) <- loadIncPc ram regs
+    (regs, addr) <- loadByteIncPc ram regs
     let addr = addr + (yReg regs)
     return (regs, memoryMode (byteToWord addr))
 
-absoluteMode :: Ram -> Registers -> IO (Registers, Addresser)
+absoluteMode :: AddresserBuilder
 absoluteMode ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
     return (regs, memoryMode addr)
 
-absoluteXMode :: Ram -> Registers -> IO (Registers, Addresser)
+absoluteXMode :: AddresserBuilder
 absoluteXMode ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
     let addr = addr + byteToWord (xReg regs)
     return (regs, memoryMode addr)
 
-absoluteYMode :: Ram -> Registers -> IO (Registers, Addresser)
+absoluteYMode :: AddresserBuilder
 absoluteYMode ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
     let addr = addr + byteToWord (yReg regs)
     return (regs, memoryMode addr)
 
-indexedIndirectXMode :: Ram -> Registers -> IO (Registers, Addresser)
+indexedIndirectXMode :: AddresserBuilder
 indexedIndirectXMode ram regs = do
-    (regs, addr) <- loadIncPc ram regs
+    (regs, addr) <- loadByteIncPc ram regs
     let x = xReg regs
     addr <- loadWord ram (byteToWord addr + byteToWord x) -- FIXME: this needs some alternate behavior for zero page mem.rs:35
     return (regs, memoryMode addr)
 
-indirectIndexedYMode :: Ram -> Registers -> IO (Registers, Addresser)
+indirectIndexedYMode :: AddresserBuilder
 indirectIndexedYMode ram regs = do
-    (regs, addr) <- loadIncPc ram regs
+    (regs, addr) <- loadByteIncPc ram regs
     let y = yReg regs
     addr <- loadWord ram (byteToWord addr) -- FIXME: this needs some alternate behavior for zero page mem.rs:35
     let addr = addr + (byteToWord y)
@@ -291,8 +299,8 @@ jmpi ram regs = do
     (regs, addr) <- loadWordIncPc ram regs
 
     -- NOTE: apparently made necessary by bug in 6502 chip ???
-    lo <- load ram addr
-    hi <- load ram ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff))
+    lo <- loadByte ram addr
+    hi <- loadByte ram ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff))
     let addr = ((byteToWord hi) `shiftL` 8) .|. (byteToWord lo)
 
     return $ regs { pcReg = addr }
@@ -311,28 +319,30 @@ brk ram regs = do
     let pc = pcReg regs
     regs <- pushWord ram regs (pc + 1)
     let flags = flagReg regs
-    regs <- push ram regs flags -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
+    regs <- pushByte ram regs flags -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
     let regs = setFlag irqMask True regs
     addr <- loadWord ram breakVector
     return $ regs { pcReg = addr }
 
 rti ram regs = do
-    (regs, flags) <- pop ram regs
+    (regs, flags) <- popByte ram regs
     let regs = setFlags flags regs
     (regs, addr) <- popWord ram regs
     return $ regs { pcReg = addr } -- NOTE: no +1
 
-pha ram regs = push ram regs (accReg regs)
+pha ram regs = pushByte ram regs (accReg regs)
 
 pla ram regs = do
-    (regs, val) <- pop ram regs
+    (regs, val) <- popByte ram regs
     return $ (setZN val regs) { accReg = val }
 
-php ram regs = push ram regs (flagReg regs .|. breakMask)
+php ram regs = pushByte ram regs (flagReg regs .|. breakMask)
 
 plp ram regs = do
-    (regs, flags) <- pop ram regs
+    (regs, flags) <- popByte ram regs
     return $ setFlags flags regs
+
+nop ram regs = return regs
 
 {-The main fetch-and-decode routine
     pub fn step(&mut self) {
@@ -353,7 +363,7 @@ nmi ram regs = do
     let pc = pcReg regs
     let flags = flagReg regs
     regs <- pushWord ram regs pc
-    regs <- push ram regs flags
+    regs <- pushByte ram regs flags
     addr <- loadWord ram nmiVector
     return $ regs { pcReg = addr }
 
@@ -364,14 +374,14 @@ irq ram regs =
             let pc = pcReg regs
             let flags = flagReg regs
             regs <- pushWord ram regs pc
-            regs <- push ram regs flags
+            regs <- pushByte ram regs flags
             addr <- loadWord ram breakVector
             return $ regs { pcReg = addr }
 
 app :: (Addresser -> Ram -> Registers -> IO Registers)
     -> Ram
     -> Registers
-    -> (Ram -> Registers -> IO (Registers, Addresser))
+    -> AddresserBuilder
     -> IO Registers
 app op ram regs builder = do
     (regs, addresser) <- builder ram regs
@@ -382,18 +392,18 @@ eval ram regs opCode =
     case opCode of
         0xa1 -> app lda ram regs indexedIndirectXMode
         0xa5 -> app lda ram regs zeroPageMode
-        0xa9 ->     lda immediateMode ram regs
+        0xa9 -> app lda ram regs immediateMode
         0xad -> app lda ram regs absoluteMode
         0xb1 -> app lda ram regs indirectIndexedYMode
         0xb5 -> app lda ram regs zeroPageXMode
         0xb9 -> app lda ram regs absoluteYMode
         0xbd -> app lda ram regs absoluteXMode
-        0xa2 ->     ldx immediateMode ram regs
+        0xa2 -> app ldx ram regs immediateMode
         0xa6 -> app ldx ram regs zeroPageMode
         0xb6 -> app ldx ram regs zeroPageYMode
         0xae -> app ldx ram regs absoluteMode
         0xbe -> app ldx ram regs absoluteYMode
-        0xa0 ->     ldy immediateMode ram regs
+        0xa0 -> app ldy ram regs immediateMode
         0xa4 -> app ldy ram regs zeroPageMode
         0xb4 -> app ldy ram regs zeroPageXMode
         0xac -> app ldy ram regs absoluteMode
@@ -411,7 +421,7 @@ eval ram regs opCode =
         0x84 -> app sty ram regs zeroPageMode
         0x94 -> app sty ram regs zeroPageXMode
         0x8c -> app sty ram regs absoluteMode
-        0x69 ->     adc immediateMode ram regs
+        0x69 -> app adc ram regs immediateMode
         0x65 -> app adc ram regs zeroPageMode
         0x75 -> app adc ram regs zeroPageXMode
         0x6d -> app adc ram regs absoluteMode
@@ -419,7 +429,7 @@ eval ram regs opCode =
         0x79 -> app adc ram regs absoluteYMode
         0x61 -> app adc ram regs indexedIndirectXMode
         0x71 -> app adc ram regs indirectIndexedYMode
-        0xe9 ->     sbc immediateMode ram regs
+        0xe9 -> app sbc ram regs immediateMode
         0xe5 -> app sbc ram regs zeroPageMode
         0xf5 -> app sbc ram regs zeroPageXMode
         0xed -> app sbc ram regs absoluteMode
@@ -427,7 +437,7 @@ eval ram regs opCode =
         0xf9 -> app sbc ram regs absoluteYMode
         0xe1 -> app sbc ram regs indexedIndirectXMode
         0xf1 -> app sbc ram regs indirectIndexedYMode
-        0xc9 ->     cmp immediateMode ram regs
+        0xc9 -> app cmp ram regs immediateMode
         0xc5 -> app cmp ram regs zeroPageMode
         0xd5 -> app cmp ram regs zeroPageXMode
         0xcd -> app cmp ram regs absoluteMode
@@ -435,13 +445,13 @@ eval ram regs opCode =
         0xd9 -> app cmp ram regs absoluteYMode
         0xc1 -> app cmp ram regs indexedIndirectXMode
         0xd1 -> app cmp ram regs indirectIndexedYMode
-        0xe0 ->     cpx immediateMode ram regs
+        0xe0 -> app cpx ram regs immediateMode
         0xe4 -> app cpx ram regs zeroPageMode
         0xec -> app cpx ram regs absoluteMode
-        0xc0 ->     cpy immediateMode ram regs
+        0xc0 -> app cpy ram regs immediateMode
         0xc4 -> app cpy ram regs zeroPageMode
         0xcc -> app cpy ram regs absoluteMode
-        0x29 ->     add immediateMode ram regs
+        0x29 -> app add ram regs immediateMode
         0x25 -> app add ram regs zeroPageMode
         0x35 -> app add ram regs zeroPageXMode
         0x2d -> app add ram regs absoluteMode
@@ -449,7 +459,7 @@ eval ram regs opCode =
         0x39 -> app add ram regs absoluteYMode
         0x21 -> app add ram regs indexedIndirectXMode
         0x31 -> app add ram regs indirectIndexedYMode
-        0x09 ->     ora immediateMode ram regs
+        0x09 -> app ora ram regs immediateMode
         0x05 -> app ora ram regs zeroPageMode
         0x15 -> app ora ram regs zeroPageXMode
         0x0d -> app ora ram regs absoluteMode
@@ -457,7 +467,7 @@ eval ram regs opCode =
         0x19 -> app ora ram regs absoluteYMode
         0x01 -> app ora ram regs indexedIndirectXMode
         0x11 -> app ora ram regs indirectIndexedYMode
-        0x49 ->     eor immediateMode ram regs
+        0x49 -> app eor ram regs immediateMode
         0x45 -> app eor ram regs zeroPageMode
         0x55 -> app eor ram regs zeroPageXMode
         0x4d -> app eor ram regs absoluteMode
@@ -467,22 +477,22 @@ eval ram regs opCode =
         0x51 -> app eor ram regs indirectIndexedYMode
         0x24 -> app bit ram regs zeroPageMode
         0x2c -> app bit ram regs absoluteMode
-        0x2a ->     rol accumulatorMode ram regs
+        0x2a -> app rol ram regs accumulatorMode
         0x26 -> app rol ram regs zeroPageMode
         0x36 -> app rol ram regs zeroPageXMode
         0x2e -> app rol ram regs absoluteMode
         0x3e -> app rol ram regs absoluteXMode
-        0x6a ->     ror accumulatorMode ram regs
+        0x6a -> app ror ram regs accumulatorMode
         0x66 -> app ror ram regs zeroPageMode
         0x76 -> app ror ram regs zeroPageXMode
         0x6e -> app ror ram regs absoluteMode
         0x7e -> app ror ram regs absoluteXMode
-        0x0a ->     asl accumulatorMode ram regs
+        0x0a -> app asl ram regs accumulatorMode
         0x06 -> app asl ram regs zeroPageMode
         0x16 -> app asl ram regs zeroPageXMode
         0x0e -> app asl ram regs absoluteMode
         0x1e -> app asl ram regs absoluteXMode
-        0x4a ->     lsr accumulatorMode ram regs
+        0x4a -> app lsr ram regs accumulatorMode
         0x46 -> app lsr ram regs zeroPageMode
         0x56 -> app lsr ram regs zeroPageXMode
         0x4e -> app lsr ram regs absoluteMode
@@ -530,5 +540,5 @@ eval ram regs opCode =
         0x68 -> pla ram regs
         0x08 -> php ram regs
         0x28 -> plp ram regs
-        0xea -> return regs
+        0xea -> nop ram regs
         _ -> error $ "Invalid op code: " ++ show opCode

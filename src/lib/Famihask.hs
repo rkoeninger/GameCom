@@ -23,8 +23,8 @@ addBytes v lbs = mapM_ (addByte v) (L.unpack lbs)
 
 addByte :: Ram -> Word8 -> IO ()
 addByte v w = do
-    oldCount <- load v index     -- Read out the old count value
-    store v index (oldCount + 1) -- Write back the updated count value
+    oldCount <- loadByte v index     -- Read out the old count value
+    storeByte v index (oldCount + 1) -- Write back the updated count value
   where
     index = fromIntegral w -- Indices in vectors are always Ints. Our bytes come in as Word8, so we need to convert them.
 
