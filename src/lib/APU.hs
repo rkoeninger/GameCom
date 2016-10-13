@@ -2,6 +2,13 @@ module APU where
 
 import Data.Word (Word8, Word16)
 
+cyclesPerEvenTick = 7438;
+cyclesPerOddTick = 7439;
+nesSampleRate = 1789920 -- Actual is 1789800, but this is divisible by 240.
+outputSampleRate = 44100
+tickFrequency = 240
+nesSamplesPerTick = nesSampleRate / tickFrequency
+
 pulseWaveforms :: [Word8]
 pulseWaveforms = [0x40, 0x60, 0x78, 0x9f]
 

@@ -2,6 +2,7 @@ module CPU where
 
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement)
 import Data.Word (Word8, Word16)
+import Control.Monad (forM_)
 import Memory
 
 data Registers = Registers {
@@ -35,7 +36,7 @@ resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
 getFlag :: Word8 -> Registers -> Bool
-getFlag mask regs = (flagReg regs .&. mask) == 0
+getFlag mask regs = (flagReg regs .&. mask) /= 0
 
 setFlag :: Word8 -> Bool -> Registers -> Registers
 setFlag mask val regs =
@@ -52,6 +53,20 @@ setFlags val regs = regs { flagReg = (val .|. 0x30) - 0x10 }
 
 setZN :: Word8 -> Registers -> Registers
 setZN val = (setFlag zeroMask $ val == 0) . (setFlag negativeMask $ (val .&. 0x80) /= 0)
+
+-- FIXME: make use of cpuStore over Memory.store
+
+cpuLoad :: Ram -> Word16 -> IO Word8
+cpuLoad = loadByte
+
+cpuStore :: Ram -> Word16 -> Word8 -> IO ()
+cpuStore ram addr val =
+    if addr == 0x4014
+        then do -- handle DMA : what is this for?
+            let start = (byteToWord val) `shiftL` 8
+            let move ad = loadByte ram ad >>= storeByte ram 0x2004
+            forM_ [start .. (start + 255)] move
+        else storeByte ram addr val
 
 loadByteIncPc :: Ram -> Registers -> IO (Registers, Word8)
 loadByteIncPc ram regs = do
@@ -349,7 +364,7 @@ plp _ ram regs = do
     (regs, flags) <- popByte ram regs
     return $ setFlags flags regs
 
-nop _ ram regs = return regs
+nop _ _ regs = return regs
 
 {-The main fetch-and-decode routine
     pub fn step(&mut self) {

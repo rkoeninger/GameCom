@@ -1,5 +1,6 @@
 module PPU where
 
+import Data.Bits (Bits, (.|.), (.&.), complement)
 import Data.Word (Word8, Word16)
 
 screenWidth = 256
@@ -7,6 +8,54 @@ screenHeight = 240
 cyclesPerScanline = 114
 vBlankScanline = 241
 lastScanline = 261
+
+data Sprite = Sprite {
+    x :: Word8,
+    y :: Word8,
+    tileIndex :: Word8,
+    attribute :: Word8
+}
+
+data SpriteSize = Size8x8 | Size8x16
+
+data ScrollDirection = XDirection | YDirection
+
+data Regs = Regs {
+    control :: Word8,
+    mask    :: Word8,
+    status  :: Word8,
+    oam     :: Word16, -- FIXME: redo this
+    scrollX :: Word8,
+    scrollY :: Word8,
+    scrollDirection :: ScrollDirection,
+    address :: Word16
+}
+
+spriteOverflowMask = 0x20
+spriteZeroHitMask = 0x40
+inVBlankMask = 0x80
+
+getFlag :: (Bits b, Num b) => b -> b -> Bool
+getFlag word mask = (word .&. mask) /= 0
+
+setFlag :: (Bits b) => b -> b -> Bool -> b
+setFlag word mask val =
+    if val
+        then word .|. mask
+        else word .&. (complement mask)
+
+xScrollOffset regs = if (control regs .&. 0x01) == 0 then 0 else screenWidth :: Word16
+yScrollOffset regs = if (control regs .&. 0x02) == 0 then 0 else screenHeight :: Word16
+vramAddrIncrement regs = if (control regs .&. 0x04) == 0 then 1 else 32 :: Word16
+spritePatternTableAddr regs = if (control regs .&. 0x08) == 0 then 0 else 0x1000 :: Word16
+backgroundPatternTableAddr regs = if (control regs .&. 0x10) == 0 then 0 else 0x1000 :: Word16
+spriteSize regs = if (control regs .&. 0x20) == 0 then Size8x8 else Size8x16
+vBlankNMI regs = (control regs .&. 0x80) /= 0
+showBackground regs = (mask regs .&. 0x08) /= 0
+showSprites regs = (mask regs .&. 0x10) /= 0
+setSpriteOverflow val regs = regs { status = setFlag (status regs) spriteOverflowMask val }
+setSpriteZeroHit val regs = regs { status = setFlag (status regs) spriteZeroHitMask val }
+setInVBlank val regs = regs { status = setFlag (status regs) inVBlankMask val }
 
 palette :: [(Word8, Word8, Word8)]
 palette = [
@@ -26,5 +75,3 @@ palette = [
     (248,184,248),    (248,164,192),    (240,208,176),    (252,224,168),
     (248,216,120),    (216,248,120),    (184,248,184),    (184,248,216),
     (0,252,252),      (248,216,248),    (0,0,0),          (0,0,0)]
-
-data Sprite = Sprite {x :: Word8, y :: Word8, tileIndex :: Word8, attribute :: Word8}
