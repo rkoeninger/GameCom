@@ -2,8 +2,8 @@ module Main where
 
 import Test.Hspec
 import Famihask
-import Memory
-import CPU
+import Memory (storeWord, storeByte, loadWord, loadByte, malloc)
+import CPU (defaultRegs, getFlag, negativeMask, zeroMask, setZN)
 
 main :: IO ()
 main = hspec $ do

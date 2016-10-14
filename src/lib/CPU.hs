@@ -3,7 +3,8 @@ module CPU where
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement)
 import Data.Word (Word8, Word16)
 import Control.Monad (forM_)
-import Memory
+import Memory (Ram, byteToWord, wordToByte, loadByte, loadWord, storeWord)
+import qualified Memory as M
 
 data Registers = Registers {
     accReg  :: Word8,
@@ -54,19 +55,14 @@ setFlags val regs = regs { flagReg = (val .|. 0x30) - 0x10 }
 setZN :: Word8 -> Registers -> Registers
 setZN val = (setFlag zeroMask $ val == 0) . (setFlag negativeMask $ (val .&. 0x80) /= 0)
 
--- FIXME: make use of cpuStore over Memory.store
-
-cpuLoad :: Ram -> Word16 -> IO Word8
-cpuLoad = loadByte
-
-cpuStore :: Ram -> Word16 -> Word8 -> IO ()
-cpuStore ram addr val =
-    if addr == 0x4014
-        then do -- handle DMA : what is this for?
+storeByte :: Ram -> Word16 -> Word8 -> IO ()
+storeByte ram addr val =
+    if addr == 0x4014 -- Writing to 0x4014 triggers DMA transfer
+        then do
             let start = (byteToWord val) `shiftL` 8
-            let move ad = loadByte ram ad >>= storeByte ram 0x2004
+            let move ad = loadByte ram ad >>= M.storeByte ram 0x2004
             forM_ [start .. (start + 255)] move
-        else storeByte ram addr val
+        else M.storeByte ram addr val
 
 loadByteIncPc :: Ram -> Registers -> IO (Registers, Word8)
 loadByteIncPc ram regs = do
@@ -90,7 +86,7 @@ pushByte ram regs val = do
 pushWord :: Ram -> Registers -> Word16 -> IO Registers
 pushWord ram regs val = do
     let s = sReg regs
-    storeWord ram (0x0100 + (byteToWord s) - 1) val
+    storeWord ram (0x0100 + (byteToWord (s - 1))) val
     return $ regs { sReg = s - 2 }
 
 popByte :: Ram -> Registers -> IO (Registers, Word8)

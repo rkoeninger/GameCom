@@ -1,9 +1,6 @@
 module Famihask (demo) where
 
 import Memory
-import APU
-import CPU
-import PPU
 
 import           Data.Word (Word8)
 import qualified Data.ByteString.Lazy as L
