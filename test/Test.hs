@@ -1,9 +1,11 @@
 module Main where
 
+import qualified Data.ByteString as B
 import Test.Hspec
 import Famihask
 import Memory (storeWord, storeByte, loadWord, loadByte, malloc)
 import CPU (defaultRegs, getFlag, negativeMask, zeroMask, setZN)
+import ROM (parseROM)
 
 main :: IO ()
 main = hspec $ do
@@ -38,3 +40,7 @@ main = hspec $ do
             let regs = setZN 0x01 defaultRegs
             (getFlag zeroMask regs) `shouldBe` False
             (getFlag negativeMask regs) `shouldBe` False
+
+    describe "ROM" $ do
+        it "rom file should begin with magic" $ do
+            parseROM (B.pack [0x4e, 0x45, 0x53, 0x1a]) `shouldBe` Left "magic matches"

@@ -1,6 +1,12 @@
 module ROM where
 
-data Region = NTSC | PAL
+import Data.Word (Word8, Word16)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
+import Text.Parsec.ByteString (Parser)
+import qualified Memory as M
+
+data Region = NTSC | PAL deriving (Eq, Show)
 
 data ROM = ROM {
     -- header is 16 bytes
@@ -23,6 +29,24 @@ data ROM = ROM {
     pub flags_7: u8,
     pub flags_10: u8,-}
     -- Last 5 bytes are zero
-    prg :: RAM,
-    chr :: RAM
+    prg :: M.Ram,
+    chr :: M.Ram
 }
+
+instance Eq ROM where
+    _ == _ = False
+
+instance Show ROM where
+    show = const "ROM"
+
+bite bytes def = maybe def Right (B.uncons bytes)
+
+parseROM :: ByteString -> Either String ROM
+parseROM bytes = do
+    (b0, bytes) <- bite bytes (Left "file too short")
+    (b1, bytes) <- bite bytes (Left "file too short")
+    (b2, bytes) <- bite bytes (Left "file too short")
+    (b3, bytes) <- bite bytes (Left "file too short")
+    if [b0, b1, b2, b3] == [0x4e, 0x45, 0x53, 0x1a]
+        then Left "magic matches"
+        else Left "error"
