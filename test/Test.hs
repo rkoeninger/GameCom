@@ -42,5 +42,5 @@ main = hspec $ do
             (getFlag negativeMask regs) `shouldBe` False
 
     describe "ROM" $ do
-        it "rom file should begin with magic" $ do
-            parseROM (B.pack [0x4e, 0x45, 0x53, 0x1a]) `shouldBe` Left "magic matches"
+        it "rom file header should begin with magic" $ do
+            parseROM (B.pack ([0x4e, 0x45, 0x53, 0x1a] ++ take 12 (repeat 0x00))) `shouldBe` Left "magic matches"

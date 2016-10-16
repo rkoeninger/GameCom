@@ -11,13 +11,17 @@ data Region = NTSC | PAL deriving (Eq, Show)
 data ROM = ROM {
     -- header is 16 bytes
     -- First 4 bytes are 'N' 'E' 'S' '\x1a'
-    --prgSize :: Word8, -- x16KB
-    --chrSize :: Word8, -- x8KB
-    ramSize :: Word8, -- x8KB
-    mapper :: Word8,
-    tranier :: Bool,
-    persistent :: Bool,
-    region :: Region,
+    prgSize16KB :: Word8, -- x16KB
+    chrSize8KB :: Word8, -- x8KB
+    ramSize8KB :: Word8, -- x8KB
+    flags6 :: Word8,
+    flags7 :: Word8,
+    flags9 :: Word8,
+    flags10 :: Word8
+    --mapper :: Word8,
+    --tranier :: Bool,
+    --persistent :: Bool,
+    --region :: Region,
     {- MMMMATPA
     /// * A: 0xx0: vertical arrangement/horizontal mirroring (CIRAM A10 = PPU A11)
     ///      0xx1: horizontal arrangement/vertical mirroring (CIRAM A10 = PPU A10)
@@ -29,8 +33,8 @@ data ROM = ROM {
     pub flags_7: u8,
     pub flags_10: u8,-}
     -- Last 5 bytes are zero
-    prg :: M.Ram,
-    chr :: M.Ram
+    --prg :: M.Ram,
+    --chr :: M.Ram
 }
 
 instance Eq ROM where
@@ -39,9 +43,22 @@ instance Eq ROM where
 instance Show ROM where
     show = const "ROM"
 
-pMagic = string $ B.pack [0x4e, 0x45, 0x53, 0x1a]
+x |> f = f x
 
-pROM = pMagic
+pMagic = "NES\x1a" |> map (fromIntegral . fromEnum) |> B.pack |> string
+
+pHeader = do
+    pMagic
+    prgSize16KB <- anyWord8
+    chrSize8KB <- anyWord8
+    flags6 <- anyWord8
+    flags7 <- anyWord8
+    ramSize8KB <- anyWord8
+    flags9 <- anyWord8
+    flags10 <- anyWord8
+    count 5 (word8 0x00)
+
+pROM = pHeader
 
 parseROM :: ByteString -> Either String ROM
 parseROM bytes =
