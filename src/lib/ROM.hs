@@ -3,7 +3,7 @@ module ROM where
 import Data.Word (Word8, Word16)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
-import Text.Parsec.ByteString (Parser)
+import Data.Attoparsec.ByteString
 import qualified Memory as M
 
 data Region = NTSC | PAL deriving (Eq, Show)
@@ -39,14 +39,12 @@ instance Eq ROM where
 instance Show ROM where
     show = const "ROM"
 
-bite bytes def = maybe def Right (B.uncons bytes)
+pMagic = string $ B.pack [0x4e, 0x45, 0x53, 0x1a]
+
+pROM = pMagic
 
 parseROM :: ByteString -> Either String ROM
-parseROM bytes = do
-    (b0, bytes) <- bite bytes (Left "file too short")
-    (b1, bytes) <- bite bytes (Left "file too short")
-    (b2, bytes) <- bite bytes (Left "file too short")
-    (b3, bytes) <- bite bytes (Left "file too short")
-    if [b0, b1, b2, b3] == [0x4e, 0x45, 0x53, 0x1a]
-        then Left "magic matches"
-        else Left "error"
+parseROM bytes =
+    case parseOnly pROM bytes of
+    Right _ -> Left "magic matches"
+    x -> Left "error"
