@@ -5,7 +5,7 @@ import Test.Hspec
 import Famihask
 import Memory (storeWord, storeByte, loadWord, loadByte, malloc)
 import CPU (defaultRegs, getFlag, negativeMask, zeroMask, setZN)
-import ROM (parseROM)
+import ROM
 
 main :: IO ()
 main = hspec $ do
@@ -43,4 +43,15 @@ main = hspec $ do
 
     describe "ROM" $ do
         it "rom file header should begin with magic" $ do
-            parseROM (B.pack ([0x4e, 0x45, 0x53, 0x1a] ++ take 12 (repeat 0x00))) `shouldBe` Left "magic matches"
+            let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ take 12 (repeat 0x00)
+            let rom = ROM {
+                trainer = False,
+                persistent = False,
+                inesMapper = 0,
+                mapper = 0,
+                ramSize = 0,
+                region = NTSC,
+                prg = B.empty,
+                chr = B.empty
+            }
+            parseROM (B.pack bytes) `shouldBe` Right rom
