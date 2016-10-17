@@ -1,4 +1,4 @@
-module Famihask (demo) where
+module GameCom (demo) where
 
 import Memory
 

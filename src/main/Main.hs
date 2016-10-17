@@ -1,5 +1,5 @@
 module Main where
 
-import Famihask (demo)
+import GameCom (demo)
 
 main = demo

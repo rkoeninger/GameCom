@@ -1,3 +1,3 @@
-[![Build Status](https://travis-ci.org/rkoeninger/Famihask.svg?branch=master)](https://travis-ci.org/rkoeninger/Famihask)
+[![Build Status](https://travis-ci.org/rkoeninger/GameCome.svg?branch=master)](https://travis-ci.org/rkoeninger/GameCom)
 
-# Famihask
+# GameCom

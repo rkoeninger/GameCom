@@ -2,7 +2,7 @@ module Main where
 
 import qualified Data.ByteString as B
 import Test.Hspec
-import Famihask
+import GameCom
 import Memory (storeWord, storeByte, loadWord, loadByte, malloc)
 import CPU (defaultRegs, getFlag, negativeMask, zeroMask, setZN)
 import ROM
