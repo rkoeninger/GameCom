@@ -4,12 +4,6 @@ import Data.Bits (Bits, (.|.), (.&.), complement)
 import Data.Word (Word8, Word16)
 import Memory
 
-screenWidth = 256
-screenHeight = 240
-cyclesPerScanline = 114
-vBlankScanline = 241
-lastScanline = 261
-
 data Sprite = Sprite {
     xPosition :: Word8,
     yPosition :: Word8,
@@ -51,6 +45,11 @@ setFlag word mask val =
         then word .|. mask
         else word .&. (complement mask)
 
+screenWidth = 256
+screenHeight = 240
+cyclesPerScanline = 114
+vBlankScanline = 241
+lastScanline = 261
 xScrollOffset regs = if (control regs .&. 0x01) == 0 then 0 else screenWidth :: Word16
 yScrollOffset regs = if (control regs .&. 0x02) == 0 then 0 else screenHeight :: Word16
 vramAddrIncrement regs = if (control regs .&. 0x04) == 0 then 1 else 32 :: Word16
