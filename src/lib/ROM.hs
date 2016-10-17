@@ -8,27 +8,23 @@ import Data.Attoparsec.ByteString (word8, anyWord8, string)
 import Data.Attoparsec.ByteString as A
 import qualified Memory as M
 
+data Mirroring = Horizontal | Vertical | FourScreen deriving (Eq, Show)
+
 data Region = NTSC | PAL deriving (Eq, Show)
 
 data ROM = ROM {
+    mirroring  :: Mirroring,
     trainer    :: Bool,
     persistent :: Bool,
     inesMapper :: Word8,
     mapper     :: Word8,
+    playChoice :: Bool,
+    unisystem  :: Bool,
     ramSize    :: Word16,
     region     :: Region,
     prg        :: ByteString,
     chr        :: ByteString
 } deriving (Eq, Show)
-
-{-  flags6: MMMMATPA
- * A: 0xx0: vertical arrangement/horizontal mirroring (CIRAM A10 = PPU A11)
-      0xx1: horizontal arrangement/vertical mirroring (CIRAM A10 = PPU A10)
-      1xxx: four-screen VRAM
-    flags7: MMMMVVPU
- * V: If 0b10, all following flags are in NES 2.0 format
- * P: ROM is for the PlayChoice-10
- * U: ROM is for VS Unisystem -}
 
 pROM = do
     -- Header is 16 bytes
@@ -46,15 +42,19 @@ pROM = do
     chrBytes <- A.take (fromIntegral chrSize8KB `shiftL` 13)
 
     return $ ROM {
-        trainer = (flags6 .&. 0x04) /= 0,
+        mirroring = if (flags6 .&. 0x08) /= 0 then FourScreen else
+                    if (flags6 .&. 0x01) /= 0 then Vertical else Horizontal,
+        trainer    = (flags6 .&. 0x04) /= 0,
         persistent = (flags6 .&. 0x02) /= 0,
-        inesMapper = flags6 `shiftR` 4,
-        mapper = (flags7 .&. 0xf0) .|. (flags6 `shiftR` 4),
-        ramSize = M.byteToWord ramSize8KB `shiftL` 13,
-        region = if (flags9 .&. 0x01) == 0 then NTSC else PAL,
+        inesMapper =  flags6 `shiftR` 4,
+        mapper     = (flags7 .&. 0xf0) .|. (flags6 `shiftR` 4),
+        playChoice = (flags7 .&. 0x02) /= 0,
+        unisystem  = (flags7 .&. 0x01) /= 0,
+        ramSize    = M.byteToWord ramSize8KB `shiftL` 13,
+        region     = if (flags9 .&. 0x01) == 0 then NTSC else PAL,
         prg = prgBytes,
         chr = chrBytes
     }
 
 parseROM :: ByteString -> Either String ROM
-parseROM bytes = parseOnly pROM bytes
+parseROM = parseOnly pROM

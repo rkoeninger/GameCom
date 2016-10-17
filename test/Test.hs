@@ -45,10 +45,13 @@ main = hspec $ do
         it "rom file header should begin with magic" $ do
             let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ take 12 (repeat 0x00)
             let rom = ROM {
+                mirroring = Horizontal,
                 trainer = False,
                 persistent = False,
                 inesMapper = 0,
                 mapper = 0,
+                playChoice = False,
+                unisystem = False,
                 ramSize = 0,
                 region = NTSC,
                 prg = B.empty,
