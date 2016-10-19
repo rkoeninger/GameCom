@@ -18,7 +18,7 @@ source-repository head
 library
   exposed-modules:     GameCom, Memory, CPU, ROM
   other-modules:       APU, PPU
-  build-depends:       base, vector, primitive, bytestring, attoparsec
+  build-depends:       base, vector, primitive, bytestring, attoparsec, persistent-vector
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
 

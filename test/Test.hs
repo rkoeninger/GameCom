@@ -3,7 +3,7 @@ module Main where
 import qualified Data.ByteString as B
 import Test.Hspec
 import GameCom
-import Memory (storeWord, storeByte, loadWord, loadByte, malloc)
+import Memory (storeByte, storeWord, loadByte, loadWord, newRAM)
 import CPU (defaultRegs, getFlag, negativeMask, zeroMask, setZN)
 import ROM
 
@@ -11,7 +11,7 @@ main :: IO ()
 main = hspec $ do
     describe "Memory" $ do
         it "words should be stored little-endian" $ do
-            ram <- malloc 2
+            ram <- newRAM 2
             storeWord ram 0 0x8cf3
             b0 <- loadByte ram 0
             b1 <- loadByte ram 1
@@ -19,7 +19,7 @@ main = hspec $ do
             b1 `shouldBe` 0x8c
 
         it "words should be loaded little-endian" $ do
-            ram <- malloc 2
+            ram <- newRAM 2
             storeByte ram 0 0xf3
             storeByte ram 1 0x8c
             w <- loadWord ram 0

@@ -3,72 +3,18 @@ module CPU where
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement)
 import Data.Word (Word8, Word16)
 import Control.Monad (forM_)
-import Memory (Ram, byteToWord, wordToByte, loadByte, loadWord, storeWord)
-import qualified Memory as M
-
-data Registers = Registers {
-    accReg  :: Word8,
-    xReg    :: Word8,
-    yReg    :: Word8,
-    sReg    :: Word8,
-    flagReg :: Word8,
-    pcReg   :: Word16
-}
-
-defaultRegs = Registers {
-    accReg  = 0x00,
-    xReg    = 0x00,
-    yReg    = 0x00,
-    sReg    = 0xfd,
-    flagReg = 0x24,
-    pcReg   = 0xc000
-}
-
-carryMask    = 0x01 :: Word8
-zeroMask     = 0x02 :: Word8
-irqMask      = 0x04 :: Word8
-decimalMask  = 0x08 :: Word8
-breakMask    = 0x10 :: Word8
-overflowMask = 0x40 :: Word8
-negativeMask = 0x80 :: Word8
+import Memory
 
 nmiVector   = 0xfffa :: Word16
 resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
-getFlag :: Word8 -> Registers -> Bool
-getFlag mask regs = (flagReg regs .&. mask) /= 0
-
-setFlag :: Word8 -> Bool -> Registers -> Registers
-setFlag mask val regs =
-    let flags = flagReg regs in
-    regs {
-        flagReg =
-            if val
-                then flags .|. mask
-                else flags .&. (complement mask)
-    }
-
-setFlags :: Word8 -> Registers -> Registers
-setFlags val regs = regs { flagReg = (val .|. 0x30) - 0x10 }
-
-setZN :: Word8 -> Registers -> Registers
-setZN val = (setFlag zeroMask $ val == 0) . (setFlag negativeMask $ (val .&. 0x80) /= 0)
-
-storeByte :: Ram -> Word16 -> Word8 -> IO ()
-storeByte ram addr val =
-    if addr == 0x4014 -- Writing to 0x4014 triggers DMA transfer
-        then do
-            let start = (byteToWord val) `shiftL` 8
-            let move ad = loadByte ram ad >>= M.storeByte ram 0x2004
-            forM_ [start .. (start + 255)] move
-        else M.storeByte ram addr val
-
-loadByteIncPc :: Ram -> Registers -> IO (Registers, Word8)
-loadByteIncPc ram regs = do
-    let pc = pcReg regs
-    val <- loadByte ram pc
-    return (regs { pcReg = pc + 1 }, val)
+loadByteIncPc :: Mem -> IO Word8
+loadByteIncPc mem = do
+    pc <- getCPUReg mem pcReg
+    val <- loadByte mem pc
+    setPCReg mem (pc + 1)
+    return val
 
 loadWordIncPc :: Ram -> Registers -> IO (Registers, Word16)
 loadWordIncPc ram regs = do

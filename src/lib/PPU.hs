@@ -2,7 +2,7 @@ module PPU where
 
 import Data.Bits (Bits, (.|.), (.&.), complement)
 import Data.Word (Word8, Word16)
-import Memory
+import Memory hiding (setFlag)
 
 data Sprite = Sprite {
     xPosition :: Word8,
