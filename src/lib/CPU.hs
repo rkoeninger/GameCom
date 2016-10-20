@@ -9,304 +9,224 @@ nmiVector   = 0xfffa :: Word16
 resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
-loadByteIncPc :: Mem -> IO Word8
-loadByteIncPc mem = do
-    pc <- getCPUReg mem pcReg
-    val <- loadByte mem pc
-    setPCReg mem (pc + 1)
-    return val
+loadByteIncPc :: MachineState -> (Word8, MachineState)
+loadByteIncPc state = (loadByte (pcReg state) state, modifyPCReg (+ 1) state)
 
-loadWordIncPc :: Ram -> Registers -> IO (Registers, Word16)
-loadWordIncPc ram regs = do
-    let pc = pcReg regs
-    val <- loadWord ram pc
-    return (regs { pcReg = pc + 2 }, val)
+loadWordIncPc :: MachineState -> (Word16, MachineState)
+loadWordIncPc state = (loadWord (pcReg state) state, modifyPCReg (+ 2) state)
 
-pushByte :: Ram -> Registers -> Word8 -> IO Registers
-pushByte ram regs val = do
-    let s = sReg regs
-    storeByte ram (0x0100 + (byteToWord s)) val
-    return $ regs { sReg = s - 1 }
+pushByte :: Word8 -> MachineState -> MachineState
+pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + (byteToWord $ sReg state)) val state
 
 -- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
-pushWord :: Ram -> Registers -> Word16 -> IO Registers
-pushWord ram regs val = do
-    let s = sReg regs
-    storeWord ram (0x0100 + (byteToWord (s - 1))) val
-    return $ regs { sReg = s - 2 }
+pushWord :: Word16 -> MachineState -> MachineState
+pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + (byteToWord (sReg state - 1))) val state
 
-popByte :: Ram -> Registers -> IO (Registers, Word8)
-popByte ram regs = do
-    let s = sReg regs
-    val <- loadByte ram (0x0100 + (byteToWord s) + 1)
-    return (regs { sReg = s + 1 }, val)
+popByte :: MachineState -> (Word8, MachineState)
+popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 1) state)
 
 -- FIXME: see two functions up
-popWord :: Ram -> Registers -> IO (Registers, Word16)
-popWord ram regs = do
-    let s = sReg regs
-    val <- loadWord ram (0x0100 + (byteToWord s) + 1)
-    return (regs { sReg = s + 2 }, val)
+popWord :: MachineState -> (Word16, MachineState)
+popWord state = (loadWord (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 2) state)
 
-type Loader = Ram -> Registers -> IO (Registers, Word8)
-type Storer = Ram -> Registers -> Word8 -> IO Registers
+type Loader = MachineState -> (Word8, MachineState)
+type Storer = Word8 -> MachineState -> MachineState
 type Addresser = (Loader, Storer)
-type AddresserBuilder = Ram -> Registers -> IO (Registers, Addresser)
-type Instruction = Addresser -> Ram -> Registers -> IO Registers
+type AddresserBuilder = MachineState -> (Addresser, MachineState)
+type Instruction = Addresser -> MachineState -> MachineState
 
 nullMode :: AddresserBuilder
-nullMode _ regs = return (regs, (loader, storer))
-    where loader _ _ = error "this instruction should not access memory"
-          storer _ _ _ = error "this instruction should not access memory"
+nullMode state = ((loader, storer), state)
+    where loader _  = error "this instruction should not access memory"
+          storer _ _ = error "this instruction should not access memory"
 
 accumulatorMode :: AddresserBuilder
-accumulatorMode _ regs = return (regs, (loader, storer))
-    where loader _ regs = return (regs, accReg regs)
-          storer _ regs val = return $ regs { accReg = val }
+accumulatorMode state = ((loader, storer), state)
+    where loader state = (aReg state, state)
+          storer = setAReg
 
 immediateMode :: AddresserBuilder
-immediateMode _ regs = return (regs, (loader, storer))
+immediateMode state = ((loader, storer), state)
     where loader = loadByteIncPc
-          storer _ _ _ = error "Can't store in immediate mode"
+          storer _ _ = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
 memoryMode addr = (loader, storer)
-    where loader ram regs = do
-              val <- loadByte ram addr
-              return (regs, val)
-          storer ram regs val = do
-              storeByte ram addr val
-              return regs
+    where loader state = (loadByte addr state, state)
+          storer val state = storeByte addr val state
+
+mapFst f (x, y) = (f x, y)
 
 zeroPageMode :: AddresserBuilder
-zeroPageMode ram regs = do
-    (regs, addr) <- loadByteIncPc ram regs
-    return (regs, memoryMode (byteToWord addr))
+zeroPageMode state = mapFst (memoryMode . byteToWord) (loadByteIncPc state)
 
 zeroPageXMode :: AddresserBuilder
-zeroPageXMode ram regs = do
-    (regs, addr) <- loadByteIncPc ram regs
-    let addr = addr + (xReg regs)
-    return (regs, memoryMode (byteToWord addr))
+zeroPageXMode state = mapFst (memoryMode . byteToWord . (+ (xReg state))) (loadByteIncPc state)
 
 zeroPageYMode :: AddresserBuilder
-zeroPageYMode ram regs = do
-    (regs, addr) <- loadByteIncPc ram regs
-    let addr = addr + (yReg regs)
-    return (regs, memoryMode (byteToWord addr))
+zeroPageYMode state = mapFst (memoryMode . byteToWord . (+ (yReg state))) (loadByteIncPc state)
 
 absoluteMode :: AddresserBuilder
-absoluteMode ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
-    return (regs, memoryMode addr)
+absoluteMode state = mapFst memoryMode (loadWordIncPc state)
 
 absoluteXMode :: AddresserBuilder
-absoluteXMode ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
-    let addr = addr + byteToWord (xReg regs)
-    return (regs, memoryMode addr)
+absoluteXMode state = mapFst (memoryMode . (+ (byteToWord $ xReg state))) (loadWordIncPc state)
 
 absoluteYMode :: AddresserBuilder
-absoluteYMode ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
-    let addr = addr + byteToWord (yReg regs)
-    return (regs, memoryMode addr)
+absoluteYMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state))) (loadWordIncPc state)
 
 indexedIndirectXMode :: AddresserBuilder
-indexedIndirectXMode ram regs = do
-    (regs, addr) <- loadByteIncPc ram regs
-    let x = xReg regs
-    addr <- loadWord ram (byteToWord addr + byteToWord x) -- FIXME: this needs some alternate behavior for zero page mem.rs:35
-    return (regs, memoryMode addr)
+indexedIndirectXMode state = mapFst (memoryMode . flip loadWord state . (+ (byteToWord $ xReg state)) . byteToWord) (loadByteIncPc state)
 
+-- FIXME: this needs some alternate behavior for zero page mem.rs:35
 indirectIndexedYMode :: AddresserBuilder
-indirectIndexedYMode ram regs = do
-    (regs, addr) <- loadByteIncPc ram regs
-    let y = yReg regs
-    addr <- loadWord ram (byteToWord addr) -- FIXME: this needs some alternate behavior for zero page mem.rs:35
-    let addr = addr + (byteToWord y)
-    return (regs, memoryMode addr)
+indirectIndexedYMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state)) . flip loadWord state . byteToWord) (loadByteIncPc state)
 
-lda (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    return $ (setZN val regs) { accReg = val }
+lda (loader, _) state = (uncurry setAReg) (loader state)
+ldx (loader, _) state = (uncurry setXReg) (loader state)
+ldy (loader, _) state = (uncurry setYReg) (loader state)
+sta (_, storer) state = storer (aReg state) state
+stx (_, storer) state = storer (xReg state) state
+sty (_, storer) state = storer (yReg state) state
 
-ldx (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    return $ (setZN val regs) { xReg = val }
-
-ldy (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    return $ (setZN val regs) { yReg = val }
-
-sta (_, storer) ram regs = storer ram regs (accReg regs)
-stx (_, storer) ram regs = storer ram regs (xReg regs)
-sty (_, storer) ram regs = storer ram regs (yReg regs)
-
-adc (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    let result = (byteToWord (accReg regs)) + (byteToWord val) + (if getFlag carryMask regs then 1 else 0)
-    let regs = setFlag carryMask ((result .&. 0x0100) /= 0) regs
+adc (loader, _) state = do
+    let (val, state) = loader state
+    let a = aReg state
+    let result = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
+    let state = setCarryFlag (result .&. 0x0100 /= 0) state
     let result8 = wordToByte result
-    let a = accReg regs
+    let a = aReg state
     let overflow = (((a `xor` val) .&. 0x80) == 0) && (((a `xor` result8) .&. 0x80) == 0x80)
-    let regs = setFlag overflowMask overflow regs
-    return $ (setZN result8 regs) { accReg = result8 }
+    setAReg result8 $ setOverflowFlag overflow $ state
 
-sbc (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    let a = accReg regs
-    let result = (byteToWord a) - (byteToWord val) - (if getFlag carryMask regs then 0 else 1)
-    let regs = setFlag carryMask ((result .&. 0x0100) == 0) regs
+sbc (loader, _) state = do
+    let (val, state) = loader state
+    let a = aReg state
+    let result = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
+    let state = setCarryFlag (result .&. 0x0100 == 0) state
     let result8 = wordToByte result
-    let overflow = (((a `xor` result8) .&. 0x80) /= 0) && (((a `xor` val) .&. 0x80) == 0x80)
-    let regs = setFlag overflowMask overflow regs
-    return $ (setZN result8 regs) { accReg = result8 }
+    let a = aReg state
+    let overflow = ((a `xor` result8) .&. 0x80 /= 0) && ((a `xor` val) .&. 0x80 == 0x80)
+    setAReg result8 $ setOverflowFlag overflow $ state
 
-compareHelper loader ram regs x = do
-    (regs, y) <- loader ram regs
+compareHelper :: Loader -> (MachineState -> Word8) -> MachineState -> MachineState
+compareHelper loader reg state = do
+    let x = reg state
+    let (y, state) = loader state
     let result = (byteToWord x) - (byteToWord y)
-    let regs = setFlag carryMask ((result .&. 0x0100) == 0) regs
-    return $ (setZN (wordToByte result) regs)
+    setZN (wordToByte result) $ setCarryFlag (result .&. 0x0100 == 0) state
 
-cmp (loader, _) ram regs = compareHelper loader ram regs (accReg regs)
-cpx (loader, _) ram regs = compareHelper loader ram regs (xReg regs)
-cpy (loader, _) ram regs = compareHelper loader ram regs (yReg regs)
+cmp (loader, _) = compareHelper loader aReg
+cpx (loader, _) = compareHelper loader xReg
+cpy (loader, _) = compareHelper loader yReg
 
-bitwiseHelper loader ram regs f = do
-    (regs, val) <- loader ram regs
-    let val = val `f` accReg regs
-    return $ (setZN val regs) { accReg = val }
+bitwiseHelper :: Loader -> (Word8 -> Word8 -> Word8) -> MachineState -> MachineState
+bitwiseHelper loader f state = do
+    let (val, state) = loader state
+    setAReg (val `f` aReg state) state
 
-add (loader, _) ram regs = bitwiseHelper loader ram regs (.&.)
-ora (loader, _) ram regs = bitwiseHelper loader ram regs (.|.)
-eor (loader, _) ram regs = bitwiseHelper loader ram regs xor
+add (loader, _) = bitwiseHelper loader (.&.)
+ora (loader, _) = bitwiseHelper loader (.|.)
+eor (loader, _) = bitwiseHelper loader xor
 
-bit (loader, _) ram regs = do
-    (regs, val) <- loader ram regs
-    let a = accReg regs
-    let regs = setFlag overflowMask ((val .&. 0x40) /= 0) .
-               setFlag negativeMask ((val .&. 0x80) /= 0) .
-               setFlag zeroMask ((val .&. a) == 0) $ regs
-    return regs
+bit (loader, _) state = setOverflowFlag (val .&. 0x40 /= 0) $
+                        setNegativeFlag (val .&. 0x80 /= 0) $
+                        setZeroFlag     (val .&. aReg st2 == 0) st2
+    where (val, st2) = loader state
 
-shiftLeftHelper (loader, storer) ram regs lsb = do
-    (regs, val) <- loader ram regs
-    let carry = (val .&. 0x80) /= 0
+shiftLHelper :: Addresser -> MachineState -> Bool -> MachineState
+shiftLHelper (loader, storer) state lsb = do
+    let (val, state) = loader state
+    let carry = val .&. 0x80 /= 0
     let result = (val `shiftL` 1) .|. (if lsb then 0x01 else 0x00)
-    let regs = setZN result $ setFlag carryMask carry regs
-    storer ram regs result
+    let state = setZN result $ setCarryFlag carry state
+    storer result state
 
-shiftRightHelper (loader, storer) ram regs msb = do
-    (regs, val) <- loader ram regs
-    let carry = (val .&. 0x01) /= 0
+shiftRHelper :: Addresser -> MachineState -> Bool -> MachineState
+shiftRHelper (loader, storer) state msb = do
+    let (val, state) = loader state
+    let carry = val .&. 0x01 /= 0
     let result = (val `shiftR` 1) .|. (if msb then 0x80 else 0x00)
-    let regs = setZN result $ setFlag carryMask carry regs
-    storer ram regs result
+    let state = setZN result $ setCarryFlag carry state
+    storer result state
 
-rol addresser ram regs = shiftLeftHelper addresser ram regs (getFlag carryMask regs)
-ror addresser ram regs = shiftRightHelper addresser ram regs (getFlag carryMask regs)
-asl addresser ram regs = shiftLeftHelper addresser ram regs False
-lsr addresser ram regs = shiftRightHelper addresser ram regs False
+rol addresser state = shiftLHelper addresser state (carryFlag state)
+ror addresser state = shiftRHelper addresser state (carryFlag state)
+asl addresser state = shiftLHelper addresser state False
+lsr addresser state = shiftRHelper addresser state False
 
-inc (loader, storer) ram regs = do
-    (regs, val) <- loader ram regs
-    let val = val + 1
-    storer ram (setZN val regs) val
+inc (loader, storer) state = do
+    let (val, state) = mapFst (+ 1) (loader state)
+    storer val $ setZN val state
 
-dec (loader, storer) ram regs = do
-    (regs, val) <- loader ram regs
-    let val = val - 1
-    storer ram (setZN val regs) val
+dec (loader, storer) state = do
+    let (val, state) = mapFst (subtract 1) (loader state)
+    storer val $ setZN val state
 
-inx _ _ regs = let x = xReg regs + 1 in return $ (setZN x regs) { xReg = x }
-dex _ _ regs = let x = xReg regs - 1 in return $ (setZN x regs) { xReg = x }
-iny _ _ regs = let y = yReg regs + 1 in return $ (setZN y regs) { yReg = y }
-dey _ _ regs = let y = yReg regs - 1 in return $ (setZN y regs) { yReg = y }
-tax _ _ regs = let acc = accReg regs in return $ (setZN acc regs) { xReg = acc }
-tay _ _ regs = let acc = accReg regs in return $ (setZN acc regs) { yReg = acc }
-txa _ _ regs = let x = xReg regs in return $ (setZN x regs) { accReg = x }
-tya _ _ regs = let y = yReg regs in return $ (setZN y regs) { accReg = y }
-txs _ _ regs = let x = xReg regs in return $ regs { sReg = x }
-tsx _ _ regs = let s = sReg regs in return $ (setZN s regs) { xReg = s }
-clc _ _ = return . setFlag carryMask False
-sec _ _ = return . setFlag carryMask True
-cli _ _ = return . setFlag irqMask False
-sei _ _ = return . setFlag irqMask True
-clv _ _ = return . setFlag overflowMask False
-cld _ _ = return . setFlag decimalMask False
-sed _ _ = return . setFlag decimalMask True
+inx _ = modifyXReg (+ 1)
+dex _ = modifyXReg (subtract 1)
+iny _ = modifyYReg (+ 1)
+dey _ = modifyYReg (subtract 1)
+tax _ state = setXReg (aReg state) state
+tay _ state = setYReg (aReg state) state
+txa _ state = setAReg (xReg state) state
+tya _ state = setAReg (yReg state) state
+txs _ state = setSReg (xReg state) state
+tsx _ state = setXReg (sReg state) state
+clc _ = setCarryFlag    False
+sec _ = setCarryFlag    True
+cli _ = setIRQFlag      False
+sei _ = setIRQFlag      True
+clv _ = setOverflowFlag False
+cld _ = setDecimalFlag  False
+sed _ = setDecimalFlag  True
 
-branch :: Ram -> Registers -> Bool -> IO Registers
-branch ram regs cond =
+branch :: MachineState -> Bool -> MachineState
+branch state cond =
     if cond
-        then return regs
-        else do
-            (regs, disp) <- loadByteIncPc ram regs
-            let pc = pcReg regs
-            return $ regs { pcReg = pc + (byteToWord disp) }
+        then state
+        else uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
 
-bpl _ ram regs = branch ram regs $ not $ getFlag negativeMask regs
-bmi _ ram regs = branch ram regs $ getFlag negativeMask regs
-bvc _ ram regs = branch ram regs $ not $ getFlag overflowMask regs
-bvs _ ram regs = branch ram regs $ getFlag overflowMask regs
-bcc _ ram regs = branch ram regs $ not $ getFlag carryMask regs
-bcs _ ram regs = branch ram regs $ getFlag carryMask regs
-bne _ ram regs = branch ram regs $ not $ getFlag zeroMask regs
-beq _ ram regs = branch ram regs $ getFlag zeroMask regs
+bpl _ state = branch state $ not $ negativeFlag state
+bmi _ state = branch state $       negativeFlag state
+bvc _ state = branch state $ not $ overflowFlag state
+bvs _ state = branch state $       overflowFlag state
+bcc _ state = branch state $ not $ carryFlag    state
+bcs _ state = branch state $       carryFlag    state
+bne _ state = branch state $ not $ zeroFlag     state
+beq _ state = branch state $       zeroFlag     state
 
-jmp _ ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
-    return $ regs { pcReg = addr }
+jmp _ = uncurry setPCReg . loadWordIncPc
 
-jpi _ ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
+    -- NOTE: apparently shift is made necessary by bug in 6502 chip ???
+jpi _ state = setPCReg ((hi `shiftL` 8) .|. lo) st2
+    where (addr, st2) = loadWordIncPc state
+          lo = byteToWord $ loadByte addr st2
+          hi = byteToWord $ loadByte ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff)) st2
 
-    -- NOTE: apparently made necessary by bug in 6502 chip ???
-    lo <- loadByte ram addr
-    hi <- loadByte ram ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff))
-    let addr = ((byteToWord hi) `shiftL` 8) .|. (byteToWord lo)
+jsr _ state = setPCReg val st3
+    where (val, st2) = loadWordIncPc state
+          pc = pcReg st2
+          st3 = pushWord (pc - 1) st2
 
-    return $ regs { pcReg = addr }
+rts _ = uncurry setPCReg . mapFst (+ 1) . popWord
 
-jsr _ ram regs = do
-    (regs, addr) <- loadWordIncPc ram regs
-    let pc = pcReg regs
-    regs <- pushWord ram regs (pc - 1)
-    return $ regs { pcReg = addr }
+brk _ state = do
+    let pc = pcReg state
+    let state = pushWord (pc + 1) state
+    let flags = flagReg state
+    let state = setIRQFlag True $ pushByte flags state -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
+    setPCReg (loadWord breakVector state) state
 
-rts _ ram regs = do
-    (regs, addr) <- popWord ram regs
-    return $ regs { pcReg = addr + 1 }
+rti _ state = setPCReg addr st4 -- NOTE: no +1
+    where (flags, st2) = popByte state
+          (addr, st4) = popWord (setFlagReg flags st2)
 
-brk _ ram regs = do
-    let pc = pcReg regs
-    regs <- pushWord ram regs (pc + 1)
-    let flags = flagReg regs
-    regs <- pushByte ram regs flags -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
-    let regs = setFlag irqMask True regs
-    addr <- loadWord ram breakVector
-    return $ regs { pcReg = addr }
-
-rti _ ram regs = do
-    (regs, flags) <- popByte ram regs
-    let regs = setFlags flags regs
-    (regs, addr) <- popWord ram regs
-    return $ regs { pcReg = addr } -- NOTE: no +1
-
-pha _ ram regs = pushByte ram regs (accReg regs)
-
-pla _ ram regs = do
-    (regs, val) <- popByte ram regs
-    return $ (setZN val regs) { accReg = val }
-
-php _ ram regs = pushByte ram regs (flagReg regs .|. breakMask)
-
-plp _ ram regs = do
-    (regs, flags) <- popByte ram regs
-    return $ setFlags flags regs
-
-nop _ _ regs = return regs
+pha _ state = pushByte (aReg state) state
+pla _ state = uncurry setAReg $ popByte state
+php _ state = pushByte (flagReg state .|. breakMask) state
+plp _ state = uncurry setFlagReg $ popByte state
+nop _ = id
 
 {-The main fetch-and-decode routine
     pub fn step(&mut self) {
@@ -317,7 +237,6 @@ nop _ _ regs = return regs
 
         self.cy += CYCLE_TABLE[op as usize] as Cycles;
     }
--}
 
 reset ram regs = do
     addr <- loadWord ram resetVector
@@ -341,12 +260,11 @@ irq ram regs =
             regs <- pushByte ram regs flags
             addr <- loadWord ram breakVector
             return $ regs { pcReg = addr }
+-}
 
-eval :: Ram -> Registers -> Word8 -> IO Registers
-eval ram regs opCode = do
-    let (op, builder) = decode opCode
-    (regs, addresser) <- builder ram regs
-    op addresser ram regs
+eval :: Word8 -> MachineState -> MachineState
+eval opCode state = let (addresser, state) = builder state in op addresser state
+    where (op, builder) = decode opCode
 
 decode :: Word8 -> (Instruction, AddresserBuilder)
 decode 0xa1 = (lda, indexedIndirectXMode)

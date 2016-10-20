@@ -1,13 +1,10 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
 module Memory where
 
 import Data.Bits ((.|.), (.&.), shiftR, shiftL, complement)
+import Data.Vector.Persistent (Vector, update, index, fromList)
 import Data.Word (Word8, Word16)
-import Data.Functor ((<$>))
-import Data.IORef (IORef, newIORef, readIORef, writeIORef, modifyIORef')
-import Control.Monad (forM_)
-import Control.Monad.Primitive (PrimMonad, PrimState)
-import qualified Data.Vector.Generic.Mutable as M
-import qualified Data.Vector.Unboxed as U
 
 byteToWord :: Word8 -> Word16
 byteToWord = fromIntegral
@@ -15,47 +12,83 @@ byteToWord = fromIntegral
 wordToByte :: Word16 -> Word8
 wordToByte = fromIntegral
 
-{-
 class Storage m where
     loadByte :: Word16 -> m -> Word8
+
+    loadWord :: Word16 -> m -> Word16
+    loadWord addr storage = b0 .|. (b1 `shiftL` 8)
+        where b0 = byteToWord $ loadByte addr storage
+              b1 = byteToWord $ loadByte (addr + 1) storage
+
     storeByte :: Word16 -> Word8 -> m -> m
--}
 
-class Storage m where
-    loadByte :: m -> Word16 -> IO Word8
+    storeWord :: Word16 -> Word16 -> m -> m
+    storeWord addr word = storeByte addr b0 . storeByte (addr + 1) b1
+        where b0 = wordToByte $ word .&. 0xff
+              b1 = wordToByte $ word `shiftR` 8
 
-    loadWord :: m -> Word16 -> IO Word16
-    loadWord storage index = do
-        b0 <- byteToWord <$> loadByte storage index
-        b1 <- byteToWord <$> loadByte storage (index + 1)
-        return $ b0 .|. (b1 `shiftL` 8)
+type RAM = Vector Word8
 
-    storeByte :: m -> Word16 -> Word8 -> IO ()
-
-    storeWord :: m -> Word16 -> Word16 -> IO ()
-    storeWord storage index word = do
-        let b0 = wordToByte $ word .&. 0xff
-        let b1 = wordToByte $ word `shiftR` 8
-        storeByte storage index b0
-        storeByte storage (index + 1) b1
-
-data RAM = RAM (U.MVector (PrimState IO) Word8)
-
-newRAM :: Int -> IO RAM
-newRAM n = RAM <$> M.replicate n 0
+malloc :: Int -> RAM
+malloc n = fromList (replicate n 0)
 
 instance Storage RAM where
-    loadByte  (RAM ram) index = M.read  ram (fromIntegral index)
-    storeByte (RAM ram) index = M.write ram (fromIntegral index)
+    loadByte addr ram =
+        case index ram (fromIntegral addr) of
+        Just value -> value
+        _ -> error $ "invalid RAM address: " ++ (show addr)
+    storeByte addr value ram = update (fromIntegral addr) value ram
 
-data CPURegsData = CPURegsData {
-    accReg  :: Word8,
+data MachineState = MachineState {
+    ram     :: RAM,
+    aReg    :: Word8,
     xReg    :: Word8,
     yReg    :: Word8,
     sReg    :: Word8,
     flagReg :: Word8,
     pcReg   :: Word16
 }
+
+defaultState = MachineState {
+    ram     = malloc 2048,
+    aReg    = 0x00,
+    xReg    = 0x00,
+    yReg    = 0x00,
+    sReg    = 0xfd,
+    flagReg = 0x24,
+    pcReg   = 0xc000
+}
+
+setAReg :: Word8 -> MachineState -> MachineState
+setAReg value state = (setZN value state) { aReg = value }
+
+setXReg :: Word8 -> MachineState -> MachineState
+setXReg value state = (setZN value state) { xReg = value }
+
+setYReg :: Word8 -> MachineState -> MachineState
+setYReg value state = (setZN value state) { yReg = value }
+
+setSReg :: Word8 -> MachineState -> MachineState
+setSReg value state = state { sReg = value }
+
+setPCReg :: Word16 -> MachineState -> MachineState
+setPCReg value state = state { pcReg = value }
+
+setFlagReg :: Word8 -> MachineState -> MachineState
+setFlagReg value state = state { flagReg = (value .|. 0x30) - 0x10 }
+
+setFlag :: Word8 -> Bool -> MachineState -> MachineState
+setFlag mask value state = 
+    let flags = flagReg state in
+    state {
+        flagReg =
+            if value
+                then flags .|. mask
+                else flags .&. (complement mask)
+    }
+
+getFlag :: Word8 -> MachineState -> Bool
+getFlag mask state = flagReg state .&. mask /= 0
 
 carryMask    = 0x01 :: Word8
 zeroMask     = 0x02 :: Word8
@@ -65,104 +98,50 @@ breakMask    = 0x10 :: Word8
 overflowMask = 0x40 :: Word8
 negativeMask = 0x80 :: Word8
 
-type CPURegs = IORef CPURegsData
+setCarryFlag    = setFlag carryMask
+setZeroFlag     = setFlag zeroMask
+setIRQFlag      = setFlag irqMask
+setDecimalFlag  = setFlag decimalMask
+setBreakFlag    = setFlag breakMask
+setOverflowFlag = setFlag overflowMask
+setNegativeFlag = setFlag negativeMask
 
-newCPURegs :: IO CPURegs
-newCPURegs = newIORef CPURegsData {
-    accReg  = 0x00,
-    xReg    = 0x00,
-    yReg    = 0x00,
-    sReg    = 0xfd,
-    flagReg = 0x24,
-    pcReg   = 0xc000
-}
+carryFlag    = getFlag carryMask
+zeroFlag     = getFlag zeroMask
+irqFlag      = getFlag irqMask
+decimalFlag  = getFlag decimalMask
+breakFlag    = getFlag breakMask
+overflowFlag = getFlag overflowMask
+negativeFlag = getFlag negativeMask
 
-setFlag_ mask val regs =
-    let flags = flagReg regs in
-    regs {
-        flagReg =
-            if val
-                then flags .|. mask
-                else flags .&. (complement mask)
-    }
+setZN :: Word8 -> MachineState -> MachineState
+setZN value = (setZeroFlag $ value == 0) . (setNegativeFlag $ value .&. 0x80 /= 0)
 
-setFlags_ val regs = regs { flagReg = (val .|. 0x30) - 0x10 }
+modifyAReg :: (Word8 -> Word8) -> MachineState -> MachineState
+modifyAReg f state = setAReg (f $ aReg state) state
 
-data Mem = Mem {
-    ram          :: RAM,
-    aRegister    :: IORef Word8,
-    xRegister    :: IORef Word8,
-    yRegister    :: IORef Word8,
-    sRegister    :: IORef Word8,
-    flagRegister :: IORef Word8,
-    pcRegister   :: IORef Word16,
-    cpuRegs :: CPURegs
-}
+modifyXReg :: (Word8 -> Word8) -> MachineState -> MachineState
+modifyXReg f state = setXReg (f $ xReg state) state
 
-{-
-data Mem = Mem {
-    ram :: Vector Word8,
-    aRg :: Word8,
-    ...
-    ppuControl :: Word8
-    ...
-}
+modifyYReg :: (Word8 -> Word8) -> MachineState -> MachineState
+modifyYReg f state = setYReg (f $ yReg state) state
 
-type MemRef = IORef Mem
+modifySReg :: (Word8 -> Word8) -> MachineState -> MachineState
+modifySReg f state = setSReg (f $ sReg state) state
 
-module CPU where
-eval opCode mem :: Word8 -> Mem -> Mem
+modifyPCReg :: (Word16 -> Word16) -> MachineState -> MachineState
+modifyPCReg f state = setPCReg (f $ pcReg state) state
 
-module Main where
-run memRef :: IORef Mem -> IO ()
-
-whileM_ (complement <$> isBreakSet) memRef
-
--}
-
-getReg f mem = readIORef (f mem)
-setReg f mem val = writeIORef (f mem) val
-
-getAReg = getReg aRegister
-setAReg = setReg aRegister
-getXReg = getReg xRegister
-setXReg = setReg xRegister
-getYReg = getReg yRegister
-setYReg = setReg yRegister
-
-getCPUReg :: Mem -> (CPURegsData -> a) -> IO a
-getCPUReg mem f = f <$> readIORef (cpuRegs mem)
-
-setPCReg :: Mem -> Word16 -> IO ()
-setPCReg mem val = modifyIORef' (cpuRegs mem) f
-    where f regs = regs { pcReg = val }
-
-getFlag :: Mem -> Word8 -> IO Bool
-getFlag mem mask = do
-    regs <- readIORef (cpuRegs mem)
-    return $ (flagReg regs .&. mask) /= 0
-
-setFlag :: Mem -> Word8 -> Bool -> IO ()
-setFlag mem mask val = modifyIORef' (cpuRegs mem) (setFlag_ mask val)
-
-setFlags :: Mem -> Word8 -> IO ()
-setFlags mem val = modifyIORef' (cpuRegs mem) (setFlags_ val)
-
-setZN :: Mem -> Word8 -> IO ()
-setZN mem val = do
-    setFlag mem zeroMask $ val == 0
-    setFlag mem negativeMask $ (val .&. 0x80) /= 0
-
-instance Storage Mem where
-    loadByte mem addr =
-        if addr < 0x2000 then loadByte (ram mem) addr else
+instance Storage MachineState where
+    loadByte addr state =
+        if addr < 0x2000 then loadByte addr (ram state) else
         error "out of range"
 
-    storeByte mem addr val =
-        if addr < 0x2000 then storeByte (ram mem) addr val else
+    storeByte addr val state =
+        if addr < 0x2000 then state { ram = storeByte addr val (ram state) } else
         if addr == 0x4014 then do -- Writing to 0x4014 triggers DMA transfer
             let start = (byteToWord val) `shiftL` 8
-            let move ad = loadByte mem ad >>= storeByte mem 0x2004
-            forM_ [start .. (start + 255)] move
+            let move ad st = storeByte 0x2004 (loadByte ad st) st
+            foldr move state [start .. (start + 255)]
         else
         error "out of range"
