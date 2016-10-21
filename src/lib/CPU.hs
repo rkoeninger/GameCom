@@ -7,7 +7,7 @@ import Memory
 
 mapFst f (x, y) = (f x, y)
 
-transfer get set state = set (get state) state
+transfer from to state = to (from state) state
 
 loadByteIncPc :: MachineState -> (Word8, MachineState)
 loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
@@ -29,7 +29,7 @@ popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySR
 popWord :: MachineState -> (Word16, MachineState)
 popWord state = (loadWord (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 2) state)
 
-type Loader = MachineState -> (Word8, MachineState)
+type Loader = MachineState -> Word8
 type Storer = Word8 -> MachineState -> MachineState
 type Addresser = (Loader, Storer)
 type AddresserBuilder = MachineState -> (Addresser, MachineState)
@@ -42,19 +42,19 @@ implicitMode state = ((loader, storer), state)
 
 accumulatorMode :: AddresserBuilder
 accumulatorMode state = ((loader, storer), state)
-    where loader state = (aReg state, state)
+    where loader = aReg
           storer = setAReg
 
 immediateMode :: AddresserBuilder
 immediateMode state = ((loader, storer), newState)
     where (val, newState) = loadByteIncPc state
-          loader = const (val, newState)
+          loader = const val
           storer _ _ = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
 memoryMode addr = (loader, storer)
-    where loader state = (loadByte addr state, state)
-          storer val state = storeByte addr val state
+    where loader = loadByte addr
+          storer = storeByte addr
 
 zeroPageMode :: AddresserBuilder
 zeroPageMode state = mapFst (memoryMode . byteToWord) (loadByteIncPc state)
@@ -81,15 +81,15 @@ indexedIndirectXMode state = mapFst (memoryMode . flip loadWord state . (+ (byte
 indirectIndexedYMode :: AddresserBuilder
 indirectIndexedYMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state)) . flip loadWord state . byteToWord) (loadByteIncPc state)
 
-lda (loader, _) = uncurry setAReg . loader
-ldx (loader, _) = uncurry setXReg . loader
-ldy (loader, _) = uncurry setYReg . loader
+lda (loader, _) = transfer loader setAReg
+ldx (loader, _) = transfer loader setXReg
+ldy (loader, _) = transfer loader setYReg
 sta (_, storer) = transfer aReg storer
 stx (_, storer) = transfer xReg storer
 sty (_, storer) = transfer yReg storer
 
 adc (loader, _) state = do
-    let (val, state) = loader state
+    let val = loader state
     let a = aReg state
     let result = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
     let state = setCarryFlag (result .&. 0x0100 /= 0) state
@@ -98,7 +98,7 @@ adc (loader, _) state = do
     setAReg result8 $ setOverflowFlag overflow state
 
 sbc (loader, _) state = do
-    let (val, state) = loader state
+    let val = loader state
     let a = aReg state
     let result = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
     let state = setCarryFlag (result .&. 0x0100 == 0) state
@@ -108,8 +108,7 @@ sbc (loader, _) state = do
 
 comp :: (MachineState -> Word8) -> Instruction
 comp reg (loader, _) state = do
-    let (y, state) = loader state
-    let result = (byteToWord $ reg state) - (byteToWord y)
+    let result = byteToWord (reg state) - byteToWord (loader state)
     setZN (wordToByte result) $ setCarryFlag (result .&. 0x0100 == 0) state
 
 cmp = comp aReg
@@ -117,14 +116,16 @@ cpx = comp xReg
 cpy = comp yReg
 
 bitwise :: (Word8 -> Word8 -> Word8) -> Instruction
-bitwise f (loader, _) = uncurry modifyAReg . mapFst f . loader
+-- bitwise f (loader, _) = uncurry modifyAReg . mapFst f . loader
+-- bitwise f (loader, _) state = modifyAReg (f (loader state)) state
+bitwise f (loader, _) = transfer (f . loader) modifyAReg
 
 add = bitwise (.&.)
 ora = bitwise (.|.)
 eor = bitwise xor
 
 bit (loader, _) state = do
-    let (val, state) = loader state
+    let val = loader state
     let overflow = val .&. 0x40 /= 0
     let negative = val .&. 0x80 /= 0
     let zero = val .&. aReg state == 0
@@ -132,14 +133,14 @@ bit (loader, _) state = do
 
 shiftLeft :: (MachineState -> Bool) -> Instruction
 shiftLeft lsb (loader, storer) state = do
-    let (val, state) = loader state
+    let val = loader state
     let carry = val .&. 0x80 /= 0
     let result = (val `shiftL` 1) .|. (if lsb state then 0x01 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
 shiftRight :: (MachineState -> Bool) -> Instruction
 shiftRight msb (loader, storer) state = do
-    let (val, state) = loader state
+    let val = loader state
     let carry = val .&. 0x01 /= 0
     let result = (val `shiftR` 1) .|. (if msb state then 0x80 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
@@ -150,11 +151,11 @@ asl = shiftLeft  $ const False
 lsr = shiftRight $ const False
 
 inc (loader, storer) state = do
-    let (val, state) = mapFst (+ 1) (loader state)
+    let val = loader state + 1
     storer val $ setZN val state
 
 dec (loader, storer) state = do
-    let (val, state) = mapFst (subtract 1) (loader state)
+    let val = loader state - 1
     storer val $ setZN val state
 
 inx _ = modifyXReg (+ 1)
