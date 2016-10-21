@@ -2,18 +2,23 @@ module CPU where
 
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement)
 import Data.Word (Word8, Word16)
-import Control.Monad (forM_)
+import Control.Arrow ((>>>))
 import Memory
 
 nmiVector   = 0xfffa :: Word16
 resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
+mapFst f (x, y) = (f x, y)
+
+transfer :: (a -> b) -> (b -> a -> c) -> a -> c
+transfer get set state = set (get state) state
+
 loadByteIncPc :: MachineState -> (Word8, MachineState)
-loadByteIncPc state = (loadByte (pcReg state) state, modifyPCReg (+ 1) state)
+loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
 
 loadWordIncPc :: MachineState -> (Word16, MachineState)
-loadWordIncPc state = (loadWord (pcReg state) state, modifyPCReg (+ 2) state)
+loadWordIncPc state = (transfer pcReg loadWord state, modifyPCReg (+ 2) state)
 
 pushByte :: Word8 -> MachineState -> MachineState
 pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + (byteToWord $ sReg state)) val state
@@ -35,8 +40,8 @@ type Addresser = (Loader, Storer)
 type AddresserBuilder = MachineState -> (Addresser, MachineState)
 type Instruction = Addresser -> MachineState -> MachineState
 
-nullMode :: AddresserBuilder
-nullMode state = ((loader, storer), state)
+implicitMode :: AddresserBuilder
+implicitMode state = ((loader, storer), state)
     where loader _  = error "this instruction should not access memory"
           storer _ _ = error "this instruction should not access memory"
 
@@ -54,8 +59,6 @@ memoryMode :: Word16 -> Addresser
 memoryMode addr = (loader, storer)
     where loader state = (loadByte addr state, state)
           storer val state = storeByte addr val state
-
-mapFst f (x, y) = (f x, y)
 
 zeroPageMode :: AddresserBuilder
 zeroPageMode state = mapFst (memoryMode . byteToWord) (loadByteIncPc state)
@@ -82,12 +85,12 @@ indexedIndirectXMode state = mapFst (memoryMode . flip loadWord state . (+ (byte
 indirectIndexedYMode :: AddresserBuilder
 indirectIndexedYMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state)) . flip loadWord state . byteToWord) (loadByteIncPc state)
 
-lda (loader, _) state = (uncurry setAReg) (loader state)
-ldx (loader, _) state = (uncurry setXReg) (loader state)
-ldy (loader, _) state = (uncurry setYReg) (loader state)
-sta (_, storer) state = storer (aReg state) state
-stx (_, storer) state = storer (xReg state) state
-sty (_, storer) state = storer (yReg state) state
+lda (loader, _) = uncurry setAReg . loader
+ldx (loader, _) = uncurry setXReg . loader
+ldy (loader, _) = uncurry setYReg . loader
+sta (_, storer) = transfer aReg storer
+stx (_, storer) = transfer xReg storer
+sty (_, storer) = transfer yReg storer
 
 adc (loader, _) state = do
     let (val, state) = loader state
@@ -95,9 +98,8 @@ adc (loader, _) state = do
     let result = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
     let state = setCarryFlag (result .&. 0x0100 /= 0) state
     let result8 = wordToByte result
-    let a = aReg state
-    let overflow = (((a `xor` val) .&. 0x80) == 0) && (((a `xor` result8) .&. 0x80) == 0x80)
-    setAReg result8 $ setOverflowFlag overflow $ state
+    let overflow = ((a `xor` val) .&. 0x80 == 0) && ((a `xor` result8) .&. 0x80 == 0x80)
+    setAReg result8 $ setOverflowFlag overflow state
 
 sbc (loader, _) state = do
     let (val, state) = loader state
@@ -105,55 +107,51 @@ sbc (loader, _) state = do
     let result = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
     let state = setCarryFlag (result .&. 0x0100 == 0) state
     let result8 = wordToByte result
-    let a = aReg state
     let overflow = ((a `xor` result8) .&. 0x80 /= 0) && ((a `xor` val) .&. 0x80 == 0x80)
-    setAReg result8 $ setOverflowFlag overflow $ state
+    setAReg result8 $ setOverflowFlag overflow state
 
-compareHelper :: Loader -> (MachineState -> Word8) -> MachineState -> MachineState
-compareHelper loader reg state = do
-    let x = reg state
+comp :: (MachineState -> Word8) -> Instruction
+comp reg (loader, _) state = do
     let (y, state) = loader state
-    let result = (byteToWord x) - (byteToWord y)
+    let result = (byteToWord $ reg state) - (byteToWord y)
     setZN (wordToByte result) $ setCarryFlag (result .&. 0x0100 == 0) state
 
-cmp (loader, _) = compareHelper loader aReg
-cpx (loader, _) = compareHelper loader xReg
-cpy (loader, _) = compareHelper loader yReg
+cmp = comp aReg
+cpx = comp xReg
+cpy = comp yReg
 
-bitwiseHelper :: Loader -> (Word8 -> Word8 -> Word8) -> MachineState -> MachineState
-bitwiseHelper loader f state = do
+bitwise :: (Word8 -> Word8 -> Word8) -> Instruction
+bitwise f (loader, _) = uncurry modifyAReg . mapFst f . loader
+
+add = bitwise (.&.)
+ora = bitwise (.|.)
+eor = bitwise xor
+
+bit (loader, _) state = do
     let (val, state) = loader state
-    setAReg (val `f` aReg state) state
+    let overflow = val .&. 0x40 /= 0
+    let negative = val .&. 0x80 /= 0
+    let zero = val .&. aReg state == 0
+    setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
-add (loader, _) = bitwiseHelper loader (.&.)
-ora (loader, _) = bitwiseHelper loader (.|.)
-eor (loader, _) = bitwiseHelper loader xor
-
-bit (loader, _) state = setOverflowFlag (val .&. 0x40 /= 0) $
-                        setNegativeFlag (val .&. 0x80 /= 0) $
-                        setZeroFlag     (val .&. aReg st2 == 0) st2
-    where (val, st2) = loader state
-
-shiftLHelper :: Addresser -> MachineState -> Bool -> MachineState
-shiftLHelper (loader, storer) state lsb = do
+shiftLeft :: (MachineState -> Bool) -> Instruction
+shiftLeft lsb (loader, storer) state = do
     let (val, state) = loader state
     let carry = val .&. 0x80 /= 0
-    let result = (val `shiftL` 1) .|. (if lsb then 0x01 else 0x00)
-    let state = setZN result $ setCarryFlag carry state
-    storer result state
+    let result = (val `shiftL` 1) .|. (if lsb state then 0x01 else 0x00)
+    storer result $ setZN result $ setCarryFlag carry state
 
-shiftRHelper :: Addresser -> MachineState -> Bool -> MachineState
-shiftRHelper (loader, storer) state msb = do
+shiftRight :: (MachineState -> Bool) -> Instruction
+shiftRight msb (loader, storer) state = do
     let (val, state) = loader state
     let carry = val .&. 0x01 /= 0
-    let result = (val `shiftR` 1) .|. (if msb then 0x80 else 0x00)
-    let state = setZN result $ setCarryFlag carry state
-    storer result state
+    let result = (val `shiftR` 1) .|. (if msb state then 0x80 else 0x00)
+    storer result $ setZN result $ setCarryFlag carry state
 
-rol addresser state = shiftLHelper addresser state (carryFlag state)
-ror addresser state = shiftRHelper addresser state (carryFlag state)
-asl addresser state = shiftLHelper addresser state False
-lsr addresser state = shiftRHelper addresser state False
+rol = shiftLeft  carryFlag
+ror = shiftRight carryFlag
+asl = shiftLeft  $ const False
+lsr = shiftRight $ const False
 
 inc (loader, storer) state = do
     let (val, state) = mapFst (+ 1) (loader state)
@@ -167,12 +165,12 @@ inx _ = modifyXReg (+ 1)
 dex _ = modifyXReg (subtract 1)
 iny _ = modifyYReg (+ 1)
 dey _ = modifyYReg (subtract 1)
-tax _ state = setXReg (aReg state) state
-tay _ state = setYReg (aReg state) state
-txa _ state = setAReg (xReg state) state
-tya _ state = setAReg (yReg state) state
-txs _ state = setSReg (xReg state) state
-tsx _ state = setXReg (sReg state) state
+tax _ = transfer aReg setXReg
+tay _ = transfer aReg setYReg
+txa _ = transfer xReg setAReg
+tya _ = transfer yReg setAReg
+txs _ = transfer xReg setSReg
+tsx _ = transfer sReg setXReg
 clc _ = setCarryFlag    False
 sec _ = setCarryFlag    True
 cli _ = setIRQFlag      False
@@ -181,89 +179,71 @@ clv _ = setOverflowFlag False
 cld _ = setDecimalFlag  False
 sed _ = setDecimalFlag  True
 
-branch :: MachineState -> Bool -> MachineState
-branch state cond =
-    if cond
-        then state
-        else uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
+branch :: (MachineState -> Bool) -> Instruction
+branch condf _ state =
+    if condf state
+        then uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
+        else state
 
-bpl _ state = branch state $ not $ negativeFlag state
-bmi _ state = branch state $       negativeFlag state
-bvc _ state = branch state $ not $ overflowFlag state
-bvs _ state = branch state $       overflowFlag state
-bcc _ state = branch state $ not $ carryFlag    state
-bcs _ state = branch state $       carryFlag    state
-bne _ state = branch state $ not $ zeroFlag     state
-beq _ state = branch state $       zeroFlag     state
+bpl = branch $ negativeFlag >>> not
+bmi = branch $ negativeFlag
+bvc = branch $ overflowFlag >>> not
+bvs = branch $ overflowFlag
+bcc = branch $ carryFlag >>> not
+bcs = branch $ carryFlag
+bne = branch $ zeroFlag >>> not
+beq = branch $ zeroFlag
 
 jmp _ = uncurry setPCReg . loadWordIncPc
 
-    -- NOTE: apparently shift is made necessary by bug in 6502 chip ???
-jpi _ state = setPCReg ((hi `shiftL` 8) .|. lo) st2
-    where (addr, st2) = loadWordIncPc state
-          lo = byteToWord $ loadByte addr st2
-          hi = byteToWord $ loadByte ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff)) st2
+-- NOTE: apparently shift is made necessary by bug in 6502 chip ???
+jpi _ state = do
+    let (addr, state) = loadWordIncPc state
+    let lo = byteToWord $ loadByte addr state
+    let hi = byteToWord $ loadByte ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff)) state
+    setPCReg ((hi `shiftL` 8) .|. lo) state
 
-jsr _ state = setPCReg val st3
-    where (val, st2) = loadWordIncPc state
-          pc = pcReg st2
-          st3 = pushWord (pc - 1) st2
+jsr _ state = do
+    let (addr, state) = loadWordIncPc state
+    setPCReg addr $ pushWord (pcReg state - 1) state
 
 rts _ = uncurry setPCReg . mapFst (+ 1) . popWord
 
 brk _ state = do
     let pc = pcReg state
     let state = pushWord (pc + 1) state
-    let flags = flagReg state
-    let state = setIRQFlag True $ pushByte flags state -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
-    setPCReg (loadWord breakVector state) state
+    -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
+    let state = setIRQFlag True $ transfer flagReg pushByte state
+    transfer (loadWord breakVector) setPCReg state
 
-rti _ state = setPCReg addr st4 -- NOTE: no +1
-    where (flags, st2) = popByte state
-          (addr, st4) = popWord (setFlagReg flags st2)
+rti _ state = do
+    let (flags, state) = popByte state
+    uncurry setPCReg $ popWord (setFlagReg flags state) -- NOTE: no +1
 
-pha _ state = pushByte (aReg state) state
-pla _ state = uncurry setAReg $ popByte state
-php _ state = pushByte (flagReg state .|. breakMask) state
-plp _ state = uncurry setFlagReg $ popByte state
+pha _ = transfer aReg pushByte
+pla _ = uncurry setAReg . popByte
+php _ = transfer ((.|. breakMask) . flagReg) pushByte
+plp _ = uncurry setFlagReg . popByte
 nop _ = id
 
-{-The main fetch-and-decode routine
-    pub fn step(&mut self) {
-        self.trace();
+reset = transfer (loadWord resetVector) setPCReg
 
-        let op = self.loadb_bump_pc();
-        decode_op!(op, self);
+nmi = transfer (loadWord nmiVector) setPCReg . transfer flagReg pushByte . transfer pcReg pushWord
 
-        self.cy += CYCLE_TABLE[op as usize] as Cycles;
-    }
+irqTransfer = transfer (loadWord breakVector) setPCReg . transfer flagReg pushByte . transfer pcReg pushWord
 
-reset ram regs = do
-    addr <- loadWord ram resetVector
-    return (regs { pcReg = addr })
+irq state =
+    if irqFlag state
+        then state
+        else irqTransfer state
 
-nmi ram regs = do
-    let pc = pcReg regs
-    let flags = flagReg regs
-    regs <- pushWord ram regs pc
-    regs <- pushByte ram regs flags
-    addr <- loadWord ram nmiVector
-    return $ regs { pcReg = addr }
+-- TODO: maybe combine step+eval and have a cycle counter on MachineState, have decode return cycle count
 
-irq ram regs =
-    if getFlag irqMask regs
-        then return regs
-        else do
-            let pc = pcReg regs
-            let flags = flagReg regs
-            regs <- pushWord ram regs pc
-            regs <- pushByte ram regs flags
-            addr <- loadWord ram breakVector
-            return $ regs { pcReg = addr }
--}
+step :: MachineState -> MachineState
+step = uncurry eval . loadByteIncPc
 
 eval :: Word8 -> MachineState -> MachineState
-eval opCode state = let (addresser, state) = builder state in op addresser state
+eval opCode = uncurry op . builder
     where (op, builder) = decode opCode
 
 decode :: Word8 -> (Instruction, AddresserBuilder)
@@ -382,40 +362,40 @@ decode 0xc6 = (dec, zeroPageMode)
 decode 0xd6 = (dec, zeroPageXMode)
 decode 0xce = (dec, absoluteMode)
 decode 0xde = (dec, absoluteXMode)
-decode 0xe8 = (inx, nullMode)
-decode 0xca = (dex, nullMode)
-decode 0xc8 = (iny, nullMode)
-decode 0x88 = (dey, nullMode)
-decode 0xaa = (tax, nullMode)
-decode 0xa8 = (tay, nullMode)
-decode 0x8a = (txa, nullMode)
-decode 0x98 = (tya, nullMode)
-decode 0x9a = (txs, nullMode)
-decode 0xba = (tsx, nullMode)
-decode 0x18 = (clc, nullMode)
-decode 0x38 = (sec, nullMode)
-decode 0x58 = (cli, nullMode)
-decode 0x78 = (sei, nullMode)
-decode 0xb8 = (clv, nullMode)
-decode 0xd8 = (cld, nullMode)
-decode 0xf8 = (sed, nullMode)
-decode 0x10 = (bpl, nullMode)
-decode 0x30 = (bmi, nullMode)
-decode 0x50 = (bvc, nullMode)
-decode 0x70 = (bvs, nullMode)
-decode 0x90 = (bcc, nullMode)
-decode 0xb0 = (bcs, nullMode)
-decode 0xd0 = (bne, nullMode)
-decode 0xf0 = (beq, nullMode)
-decode 0x4c = (jmp, nullMode)
-decode 0x6c = (jpi, nullMode)
-decode 0x20 = (jsr, nullMode)
-decode 0x60 = (rts, nullMode)
-decode 0x00 = (brk, nullMode)
-decode 0x40 = (rti, nullMode)
-decode 0x48 = (pha, nullMode)
-decode 0x68 = (pla, nullMode)
-decode 0x08 = (php, nullMode)
-decode 0x28 = (plp, nullMode)
-decode 0xea = (nop, nullMode)
+decode 0xe8 = (inx, implicitMode)
+decode 0xca = (dex, implicitMode)
+decode 0xc8 = (iny, implicitMode)
+decode 0x88 = (dey, implicitMode)
+decode 0xaa = (tax, implicitMode)
+decode 0xa8 = (tay, implicitMode)
+decode 0x8a = (txa, implicitMode)
+decode 0x98 = (tya, implicitMode)
+decode 0x9a = (txs, implicitMode)
+decode 0xba = (tsx, implicitMode)
+decode 0x18 = (clc, implicitMode)
+decode 0x38 = (sec, implicitMode)
+decode 0x58 = (cli, implicitMode)
+decode 0x78 = (sei, implicitMode)
+decode 0xb8 = (clv, implicitMode)
+decode 0xd8 = (cld, implicitMode)
+decode 0xf8 = (sed, implicitMode)
+decode 0x10 = (bpl, implicitMode)
+decode 0x30 = (bmi, implicitMode)
+decode 0x50 = (bvc, implicitMode)
+decode 0x70 = (bvs, implicitMode)
+decode 0x90 = (bcc, implicitMode)
+decode 0xb0 = (bcs, implicitMode)
+decode 0xd0 = (bne, implicitMode)
+decode 0xf0 = (beq, implicitMode)
+decode 0x4c = (jmp, implicitMode)
+decode 0x6c = (jpi, implicitMode)
+decode 0x20 = (jsr, implicitMode)
+decode 0x60 = (rts, implicitMode)
+decode 0x00 = (brk, implicitMode)
+decode 0x40 = (rti, implicitMode)
+decode 0x48 = (pha, implicitMode)
+decode 0x68 = (pla, implicitMode)
+decode 0x08 = (php, implicitMode)
+decode 0x28 = (plp, implicitMode)
+decode 0xea = (nop, implicitMode)
 decode opCode = error $ "Invalid op code: " ++ show opCode
