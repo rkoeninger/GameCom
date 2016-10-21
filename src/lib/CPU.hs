@@ -46,8 +46,9 @@ accumulatorMode state = ((loader, storer), state)
           storer = setAReg
 
 immediateMode :: AddresserBuilder
-immediateMode state = ((loader, storer), state)
-    where loader = loadByteIncPc
+immediateMode state = ((loader, storer), newState)
+    where (val, newState) = loadByteIncPc state
+          loader = const (val, newState)
           storer _ _ = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
