@@ -93,7 +93,7 @@ getFlag mask state = flagReg state .&. mask /= 0
 carryMask    = 0x01 :: Word8
 zeroMask     = 0x02 :: Word8
 irqMask      = 0x04 :: Word8
-decimalMask  = 0x08 :: Word8
+decimalMask  = 0x08 :: Word8 -- TODO: unused since BCD is disabled in NES
 breakMask    = 0x10 :: Word8
 overflowMask = 0x40 :: Word8
 negativeMask = 0x80 :: Word8

@@ -5,13 +5,8 @@ import Data.Word (Word8, Word16)
 import Control.Arrow ((>>>))
 import Memory
 
-nmiVector   = 0xfffa :: Word16
-resetVector = 0xfffc :: Word16
-breakVector = 0xfffe :: Word16
-
 mapFst f (x, y) = (f x, y)
 
-transfer :: (a -> b) -> (b -> a -> c) -> a -> c
 transfer get set state = set (get state) state
 
 loadByteIncPc :: MachineState -> (Word8, MachineState)
@@ -25,7 +20,7 @@ pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + (byteToWord $
 
 -- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
 pushWord :: Word16 -> MachineState -> MachineState
-pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + (byteToWord (sReg state - 1))) val state
+pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + (byteToWord $ sReg state - 1)) val state
 
 popByte :: MachineState -> (Word8, MachineState)
 popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 1) state)
@@ -42,7 +37,7 @@ type Instruction = Addresser -> MachineState -> MachineState
 
 implicitMode :: AddresserBuilder
 implicitMode state = ((loader, storer), state)
-    where loader _  = error "this instruction should not access memory"
+    where loader _ = error "this instruction should not access memory"
           storer _ _ = error "this instruction should not access memory"
 
 accumulatorMode :: AddresserBuilder
@@ -176,7 +171,7 @@ sec _ = setCarryFlag    True
 cli _ = setIRQFlag      False
 sei _ = setIRQFlag      True
 clv _ = setOverflowFlag False
-cld _ = setDecimalFlag  False
+cld _ = setDecimalFlag  False -- TODO: decimal flag isn't used since BCD commands are disabled
 sed _ = setDecimalFlag  True
 
 branch :: (MachineState -> Bool) -> Instruction
@@ -225,6 +220,10 @@ pla _ = uncurry setAReg . popByte
 php _ = transfer ((.|. breakMask) . flagReg) pushByte
 plp _ = uncurry setFlagReg . popByte
 nop _ = id
+
+nmiVector   = 0xfffa :: Word16
+resetVector = 0xfffc :: Word16
+breakVector = 0xfffe :: Word16
 
 reset = transfer (loadWord resetVector) setPCReg
 
