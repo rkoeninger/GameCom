@@ -55,7 +55,7 @@ defaultState = MachineState {
     xReg    = 0x00,
     yReg    = 0x00,
     sReg    = 0xfd,
-    flagReg = 0x24,
+    flagReg = unusedMask .|. irqMask,
     pcReg   = 0xc000
 }
 
@@ -75,7 +75,7 @@ setPCReg :: Word16 -> MachineState -> MachineState
 setPCReg value state = state { pcReg = value }
 
 setFlagReg :: Word8 -> MachineState -> MachineState
-setFlagReg value state = state { flagReg = (value .|. 0x30) - 0x10 }
+setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. (complement breakMask) }
 
 setFlag :: Word8 -> Bool -> MachineState -> MachineState
 setFlag mask value state = 
@@ -95,6 +95,7 @@ zeroMask     = 0x02 :: Word8
 irqMask      = 0x04 :: Word8
 decimalMask  = 0x08 :: Word8 -- TODO: unused since BCD is disabled in NES
 breakMask    = 0x10 :: Word8
+unusedMask   = 0x20 :: Word8 -- NOTE: should always be 1 for some reason
 overflowMask = 0x40 :: Word8
 negativeMask = 0x80 :: Word8
 

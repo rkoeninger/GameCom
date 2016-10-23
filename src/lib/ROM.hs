@@ -35,8 +35,7 @@ pROM = do
     flags7      <- anyWord8
     ramSize8KB  <- anyWord8
     flags9      <- anyWord8
-    _           <- anyWord8
-    count 5 (word8 0x00)
+    A.take 6 -- ignore flags10 and last 5 are just zeroes
 
     prgBytes <- A.take (fromIntegral prgSize16KB `shiftL` 14)
     chrBytes <- A.take (fromIntegral chrSize8KB `shiftL` 13)

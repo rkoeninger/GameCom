@@ -88,23 +88,16 @@ sta (_, storer) = transfer aReg storer
 stx (_, storer) = transfer xReg storer
 sty (_, storer) = transfer yReg storer
 
-adc (loader, _) state = do
-    let val = loader state
+addWithCarry val state = do
     let a = aReg state
-    let result = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
-    let state = setCarryFlag (result .&. 0x0100 /= 0) state
-    let result8 = wordToByte result
-    let overflow = ((a `xor` val) .&. 0x80 == 0) && ((a `xor` result8) .&. 0x80 == 0x80)
-    setAReg result8 $ setOverflowFlag overflow state
+    let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 0x0001 else 0x0000)
+    let resultByte = wordToByte resultWord
+    let carry = resultWord .&. 0x0100 /= 0
+    let overflow = (a .&. 0x80 == val .&. 0x80) && (a .&. 0x80 /= resultByte .&. 0x80)
+    setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
-sbc (loader, _) state = do
-    let val = loader state
-    let a = aReg state
-    let result = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
-    let state = setCarryFlag (result .&. 0x0100 == 0) state
-    let result8 = wordToByte result
-    let overflow = ((a `xor` result8) .&. 0x80 /= 0) && ((a `xor` val) .&. 0x80 == 0x80)
-    setAReg result8 $ setOverflowFlag overflow state
+adc (loader, _) = transfer loader addWithCarry
+sbc (loader, _) = transfer (negate . loader) addWithCarry
 
 comp :: (MachineState -> Word8) -> Instruction
 comp reg (loader, _) state = do
@@ -116,8 +109,6 @@ cpx = comp xReg
 cpy = comp yReg
 
 bitwise :: (Word8 -> Word8 -> Word8) -> Instruction
--- bitwise f (loader, _) = uncurry modifyAReg . mapFst f . loader
--- bitwise f (loader, _) state = modifyAReg (f (loader state)) state
 bitwise f (loader, _) = transfer (f . loader) modifyAReg
 
 add = bitwise (.&.)
@@ -126,8 +117,8 @@ eor = bitwise xor
 
 bit (loader, _) state = do
     let val = loader state
-    let overflow = val .&. 0x40 /= 0
-    let negative = val .&. 0x80 /= 0
+    let overflow = val .&. overflowMask /= 0
+    let negative = val .&. negativeMask /= 0
     let zero = val .&. aReg state == 0
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
@@ -193,7 +184,7 @@ beq = branch $ zeroFlag
 
 jmp _ = uncurry setPCReg . loadWordIncPc
 
--- NOTE: apparently shift is made necessary by bug in 6502 chip ???
+-- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
 jpi _ state = do
     let (addr, state) = loadWordIncPc state
     let lo = byteToWord $ loadByte addr state
@@ -213,9 +204,7 @@ brk _ state = do
     let state = setIRQFlag True $ transfer flagReg pushByte state
     transfer (loadWord breakVector) setPCReg state
 
-rti _ state = do
-    let (flags, state) = popByte state
-    uncurry setPCReg $ popWord (setFlagReg flags state) -- NOTE: no +1
+rti _ = uncurry setPCReg . popWord . uncurry setFlagReg . popByte -- NOTE: unlike rts, no +1
 
 pha _ = transfer aReg pushByte
 pla _ = uncurry setAReg . popByte

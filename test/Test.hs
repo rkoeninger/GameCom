@@ -7,6 +7,8 @@ import Memory
 import CPU
 import ROM
 
+x |> f = f x
+
 main :: IO ()
 main = hspec $ do
     describe "Memory" $ do
@@ -52,3 +54,62 @@ main = hspec $ do
                 chr = B.empty
             }
             parseROM (B.pack bytes) `shouldBe` Right rom
+
+    describe "Arithmetic" $ do
+        it "should perform simple, non-carried, non-overflow, addition" $ do
+            let state = defaultState
+                        |> setAReg 21 -- argument
+                        |> storeByte 0x00 33 -- other argument
+                        |> storeByte 0x10 0x65 -- adc/zpg instruction
+                        |> storeByte 0x11 0x00 -- zpg address
+                        |> setPCReg 0x0010 -- set PC to location of adc/zpg
+                        |> step
+            aReg state `shouldBe` 54
+            zeroFlag state `shouldBe` False
+            negativeFlag state `shouldBe` False
+            overflowFlag state `shouldBe` False
+            carryFlag state `shouldBe` False
+
+        it "should perform simple, previous carry, non-overflow, addition" $ do
+            let state = defaultState
+                        |> setAReg 21 -- argument
+                        |> setCarryFlag True
+                        |> storeByte 0x00 33 -- other argument
+                        |> storeByte 0x10 0x65 -- adc/zpg instruction
+                        |> storeByte 0x11 0x00 -- zpg address
+                        |> setPCReg 0x0010 -- set PC to location of adc/zpg
+                        |> step
+            aReg state `shouldBe` 55
+            zeroFlag state `shouldBe` False
+            negativeFlag state `shouldBe` False
+            overflowFlag state `shouldBe` False
+            carryFlag state `shouldBe` False
+
+        it "should perform simple, non-carried, non-overflow, addition resulting in carry" $ do
+            let state = defaultState
+                        |> setAReg 150 -- argument
+                        |> storeByte 0x00 150 -- other argument
+                        |> storeByte 0x10 0x65 -- adc/zpg instruction
+                        |> storeByte 0x11 0x00 -- zpg address
+                        |> setPCReg 0x0010 -- set PC to location of adc/zpg
+                        |> step
+            aReg state `shouldBe` 44
+            zeroFlag state `shouldBe` False
+            negativeFlag state `shouldBe` False
+            overflowFlag state `shouldBe` True
+            carryFlag state `shouldBe` True
+
+        it "should perform simple, previous carry, non-overflow, addition resulting in carry" $ do
+            let state = defaultState
+                        |> setAReg 150 -- argument
+                        |> setCarryFlag True
+                        |> storeByte 0x00 150 -- other argument
+                        |> storeByte 0x10 0x65 -- adc/zpg instruction
+                        |> storeByte 0x11 0x00 -- zpg address
+                        |> setPCReg 0x0010 -- set PC to location of adc/zpg
+                        |> step
+            aReg state `shouldBe` 45
+            zeroFlag state `shouldBe` False
+            negativeFlag state `shouldBe` False
+            overflowFlag state `shouldBe` True
+            carryFlag state `shouldBe` True
