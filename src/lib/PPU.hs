@@ -4,38 +4,6 @@ import Data.Bits (Bits, (.|.), (.&.), complement)
 import Data.Word (Word8, Word16)
 import Memory hiding (setFlag)
 
-data Sprite = Sprite {
-    xPosition :: Word8,
-    yPosition :: Word8,
-    tileIndex :: Word8,
-    attribute :: Word8
-}
-
-data SpriteSize = Size8x8 | Size8x16
-data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
-data SpritePriority = AboveBackground | BelowBackground
-data ScrollDirection = XDirection | YDirection
-type RGB = (Word8, Word8, Word8)
-data PixelLayer = BackgroundLayer | SpriteLayer
-type SpriteColor = (SpritePriority, RGB)
-
-data NametableAddress = NametableAddress {
-    xIndex :: Word8,
-    yIndex :: Word8,
-    base :: Word16
-}
-
-data Regs = Regs {
-    control :: Word8,
-    mask    :: Word8,
-    status  :: Word8,
-    oamAddr :: Word16,
-    scrollX :: Word8,
-    scrollY :: Word8,
-    scrollDirection :: ScrollDirection,
-    address :: Word16
-}
-
 getFlag :: (Bits b, Num b) => b -> b -> Bool
 getFlag word mask = (word .&. mask) /= 0
 
@@ -45,22 +13,6 @@ setFlag word mask val =
         then word .|. mask
         else word .&. (complement mask)
 
-screenWidth = 256
-screenHeight = 240
-cyclesPerScanline = 114
-vBlankScanline = 241
-lastScanline = 261
-xScrollOffset regs = if (control regs .&. 0x01) == 0 then 0 else screenWidth :: Word16
-yScrollOffset regs = if (control regs .&. 0x02) == 0 then 0 else screenHeight :: Word16
-vramAddrIncrement regs = if (control regs .&. 0x04) == 0 then 1 else 32 :: Word16
-spritePatternTableAddr regs = if (control regs .&. 0x08) == 0 then 0 else 0x1000 :: Word16
-backgroundPatternTableAddr regs = if (control regs .&. 0x10) == 0 then 0 else 0x1000 :: Word16
-spriteSize regs = if (control regs .&. 0x20) == 0 then Size8x8 else Size8x16
-spriteHeight regs =
-    case spriteSize regs of
-    Size8x8  -> 8
-    Size8x16 -> 16
-vBlankNMI regs = (control regs .&. 0x80) /= 0
 showBackground regs = (mask regs .&. 0x08) /= 0
 showSprites regs = (mask regs .&. 0x10) /= 0
 setSpriteOverflow val regs = regs { status = setFlag (status regs) 0x20 val }

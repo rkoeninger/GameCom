@@ -1,6 +1,6 @@
 module CPU where
 
-import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement)
+import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement, testBit)
 import Data.Word (Word8, Word16)
 import Control.Arrow ((>>>))
 import Memory
@@ -102,44 +102,41 @@ sbc (loader, _) = transfer (negate . loader) addWithCarry
 comp :: (MachineState -> Word8) -> Instruction
 comp reg (loader, _) state = do
     let result = byteToWord (reg state) - byteToWord (loader state)
-    setZN (wordToByte result) $ setCarryFlag (result .&. 0x0100 == 0) state
+    setZN (wordToByte result) $ setCarryFlag (testBit result 9) state
 
 cmp = comp aReg
 cpx = comp xReg
 cpy = comp yReg
 
-bitwise :: (Word8 -> Word8 -> Word8) -> Instruction
-bitwise f (loader, _) = transfer (f . loader) modifyAReg
-
-add = bitwise (.&.)
-ora = bitwise (.|.)
-eor = bitwise xor
+add (loader, _) = transfer ((.&.) . loader) modifyAReg
+ora (loader, _) = transfer ((.|.) . loader) modifyAReg
+eor (loader, _) = transfer (xor . loader) modifyAReg
 
 bit (loader, _) state = do
     let val = loader state
-    let overflow = val .&. overflowMask /= 0
-    let negative = val .&. negativeMask /= 0
+    let overflow = testBit val overflowBit
+    let negative = testBit val negativeBit
     let zero = val .&. aReg state == 0
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
-shiftLeft :: (MachineState -> Bool) -> Instruction
+shiftLeft :: Bool -> Instruction
 shiftLeft lsb (loader, storer) state = do
     let val = loader state
-    let carry = val .&. 0x80 /= 0
-    let result = (val `shiftL` 1) .|. (if lsb state then 0x01 else 0x00)
+    let carry = testBit val 7
+    let result = (val `shiftL` 1) .|. (if lsb && carryFlag state then 0x01 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
-shiftRight :: (MachineState -> Bool) -> Instruction
+shiftRight :: Bool -> Instruction
 shiftRight msb (loader, storer) state = do
     let val = loader state
-    let carry = val .&. 0x01 /= 0
-    let result = (val `shiftR` 1) .|. (if msb state then 0x80 else 0x00)
+    let carry = testBit val 0
+    let result = (val `shiftR` 1) .|. (if msb && carryFlag state then 0x80 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
-rol = shiftLeft  carryFlag
-ror = shiftRight carryFlag
-asl = shiftLeft  $ const False
-lsr = shiftRight $ const False
+rol = shiftLeft  True
+ror = shiftRight True
+asl = shiftLeft  False
+lsr = shiftRight False
 
 inc (loader, storer) state = do
     let val = loader state + 1
