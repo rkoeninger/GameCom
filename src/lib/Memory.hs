@@ -4,6 +4,7 @@ module Memory where
 
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
 import Data.Vector.Persistent (Vector, update, index, fromList)
+import qualified Data.Vector.Persistent as P
 import Data.Word (Word8, Word16)
 
 byteToWord :: Word8 -> Word16
@@ -193,26 +194,28 @@ vBlankNMI state = testBit (control state) 7
     addr: PpuAddr,      // PPUADDR: 0x2006
 -}
 
+dmaTransfer :: Word8 -> MachineState -> MachineState
+dmaTransfer value state = do
+    let start = byteToWord value `shiftL` 8
+    state { oamData = P.fromList $ map (flip loadByte state) $ map (+ start) [0..255] }
+
 instance Storage MachineState where
     loadByte addr state =
         if addr < 0x2000 then loadByte addr (ram state) else
         if addr == 0x2000 then control state else
         if addr == 0x2001 then mask state else
         if addr == 0x2002 then status state else
-        if addr == 0x2003 then oamAddr state else
-        if addr == 0x2004 then error "attempt to read to OAM Data" else
-        error "Storage MachineState loadByte: Address out of range"
+        if addr == 0x2003 then error "attempt to read from OAM Addr" else -- oamAddr state else
+        if addr == 0x2004 then error "attempt to read from OAM Data" else
+        if addr == 0x4014 then error "attempt to read from DMA Trigger 0x4014" else
+        error $ "Storage MachineState loadByte: Address out of range: " ++ addr
 
     storeByte addr value state =
         if addr < 0x2000 then state { ram = storeByte addr value (ram state) } else
         if addr == 0x2000 then setControlReg value state else
         if addr == 0x2001 then setMaskReg value state else
         if addr == 0x2002 then setStatusReg value state else
-        if addr == 0x2003 then setOAMAddr value state else
+        if addr == 0x2003 then error "attempt to write to OAM Addr" else -- setOAMAddr value state else
         if addr == 0x2004 then error "attempt to write to OAM Data" else
-        if addr == 0x4014 then do -- Writing to 0x4014 triggers DMA transfer
-            let start = (byteToWord value) `shiftL` 8
-            let move ad st = st { oamData = storeByte ad(loadByte (ad + start) st) (oamData st) } -- write each byte to oamData
-            foldr move state [0..255]
-        else
-        error "Storage MachineState storeByte: Address out of range"
+        if addr == 0x4014 then dmaTransfer value state else
+        error $ "Storage MachineState storeByte: Address out of range: " ++ addr
