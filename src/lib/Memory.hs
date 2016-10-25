@@ -37,7 +37,7 @@ instance Storage RAM where
     loadByte addr ram =
         case index ram (fromIntegral addr) of
         Just value -> value
-        _ -> error $ "invalid RAM address: " ++ (show addr)
+        _ -> error $ "invalid RAM address: " ++ show addr
     storeByte addr value ram = update (fromIntegral addr) value ram
 
 data Sprite = Sprite {
@@ -62,49 +62,47 @@ data NametableAddress = NametableAddress {
 }
 
 data MachineState = MachineState {
-    ram     :: RAM,
-    aReg    :: Word8,
-    xReg    :: Word8,
-    yReg    :: Word8,
-    sReg    :: Word8,
-    flagReg :: Word8,
-    pcReg   :: Word16,
-    control :: Word8,
-    mask    :: Word8,
-    status  :: Word8,
-    oamAddr :: Word8,
-    oamData :: RAM
+    ram        :: RAM,
+    aReg       :: Word8,
+    xReg       :: Word8,
+    yReg       :: Word8,
+    sReg       :: Word8,
+    flagReg    :: Word8,
+    pcReg      :: Word16,
+    controlReg :: Word8,
+    maskReg    :: Word8,
+    statusReg  :: Word8,
+    oamData    :: RAM
 }
 
 defaultState = MachineState {
-    ram     = malloc 2048,
-    aReg    = 0x00,
-    xReg    = 0x00,
-    yReg    = 0x00,
-    sReg    = 0xfd,
-    flagReg = unusedMask .|. irqMask,
-    pcReg   = 0xc000,
-    control = 0x00,
-    mask    = 0x00,
-    status  = 0x00,
-    oamAddr = 0x00,
-    oamData = malloc 256
+    ram        = malloc 2048,
+    aReg       = 0x00,
+    xReg       = 0x00,
+    yReg       = 0x00,
+    sReg       = 0xfd,
+    flagReg    = unusedMask .|. irqMask,
+    pcReg      = 0xc000,
+    controlReg = 0x00,
+    maskReg    = 0x00,
+    statusReg  = 0x00,
+    oamData    = malloc 256
 }
 
-setAReg, setXReg, setYReg, setSReg, setFlagReg, setZN :: Word8 -> MachineState -> MachineState
+modifyRAM f state = state { ram = f (ram state) }
+
 setAReg value state = (setZN value state) { aReg = value }
 setXReg value state = (setZN value state) { xReg = value }
 setYReg value state = (setZN value state) { yReg = value }
 setSReg value state = state { sReg = value }
-setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. (complement breakMask) }
-setZN value = (setZeroFlag $ value == 0) . (setNegativeFlag $ testBit value 7)
-setControlReg value state = state { control = value }
-setMaskReg value state = state { mask = value }
-setStatusReg value state = state { status = value }
-setOAMAddr value state = state { oamAddr = value }
-
-setPCReg :: Word16 -> MachineState -> MachineState
 setPCReg value state = state { pcReg = value }
+setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. (complement breakMask) }
+setControlReg value state = state { controlReg = value }
+setMaskReg value state = state { maskReg = value }
+setStatusReg value state = state { statusReg = value }
+
+setZN :: Word8 -> MachineState -> MachineState
+setZN value = setZeroFlag (value == 0) . setNegativeFlag (testBit value 7)
 
 setFlag :: Word8 -> Bool -> MachineState -> MachineState
 setFlag mask value state = 
@@ -155,11 +153,11 @@ breakFlag    = getFlag breakMask
 overflowFlag = getFlag overflowMask
 negativeFlag = getFlag negativeMask
 
-modifyAReg, modifyXReg, modifyYReg, modifySReg :: (Word8 -> Word8) -> MachineState -> MachineState
 modifyAReg f state = setAReg (f $ aReg state) state
 modifyXReg f state = setXReg (f $ xReg state) state
 modifyYReg f state = setYReg (f $ yReg state) state
 modifySReg f state = setSReg (f $ sReg state) state
+modifyStatusReg f state = setStatusReg (f $ statusReg state) state
 
 modifyPCReg :: (Word16 -> Word16) -> MachineState -> MachineState
 modifyPCReg f state = setPCReg (f $ pcReg state) state
@@ -171,14 +169,14 @@ vBlankScanline = 241
 lastScanline = 261
 
 xScrollOffset, yScrollOffset, vramAddrIncrement, spritePatternTableAddr, backgroundPatternTableAddr :: MachineState -> Word16
-xScrollOffset state              = if testBit (control state) 0 then screenWidth else 0x0000
-yScrollOffset state              = if testBit (control state) 1 then screenHeight else 0x0000
-vramAddrIncrement state          = if testBit (control state) 2 then 0x0020 else 0x0001
-spritePatternTableAddr state     = if testBit (control state) 4 then 0x1000 else 0x0000
-backgroundPatternTableAddr state = if testBit (control state) 5 then 0x1000 else 0x0000
+xScrollOffset state              = if testBit (controlReg state) 0 then screenWidth else 0x0000
+yScrollOffset state              = if testBit (controlReg state) 1 then screenHeight else 0x0000
+vramAddrIncrement state          = if testBit (controlReg state) 2 then 0x0020 else 0x0001
+spritePatternTableAddr state     = if testBit (controlReg state) 4 then 0x1000 else 0x0000
+backgroundPatternTableAddr state = if testBit (controlReg state) 5 then 0x1000 else 0x0000
 
 spriteSize :: MachineState -> SpriteSize
-spriteSize state = if testBit (control state) 6 then Size8x16 else Size8x8
+spriteSize state = if testBit (controlReg state) 6 then Size8x16 else Size8x8
 
 spriteHeight :: MachineState -> Word8
 spriteHeight state =
@@ -187,7 +185,30 @@ spriteHeight state =
     Size8x16 -> 16
 
 vBlankNMI :: MachineState -> Bool
-vBlankNMI state = testBit (control state) 7
+vBlankNMI state = testBit (controlReg state) 7
+
+showBackground state = testBit (maskReg state) 3
+showSprites state = testBit (maskReg state) 4
+setSpriteOverflow value = modifyStatusReg (.|. (if value then 0x20 else 0x00))
+setSpriteZeroHit value  = modifyStatusReg (.|. (if value then 0x40 else 0x00))
+setInVBlank value       = modifyStatusReg (.|. (if value then 0x80 else 0x00))
+flipHorizontal sprite = testBit sprite 6
+flipVertical sprite = testBit sprite 7
+priority sprite = if testBit sprite 5 then BelowBackground else AboveBackground
+onScanline sprite y state = (y >= spriteY) && (y < (spriteY + spriteHeight state))
+    where spriteY = yPosition sprite
+inBoundingBox sprite x y state =
+    (x >= spriteX) && (x < spriteX) && (y >= spriteY) && (y < (spriteY + spriteHeight state))
+    where spriteX = xPosition sprite
+          spriteY = yPosition sprite
+tiles sprite state =
+    case spriteSize state of
+    Size8x8  -> Tile8x8 $ byteToWord i .|. base
+    Size8x16 -> Tile8x16 first $ first + 1
+    where base = spritePatternTableAddr state
+          i = tileIndex sprite
+          addend = if testBit i 0 then 0x1000 else 0
+          first = byteToWord (i .&. 0xf3) + addend
 
 {-
     scroll: PpuScroll,  // PPUSCROLL: 0x2005
@@ -197,25 +218,26 @@ vBlankNMI state = testBit (control state) 7
 dmaTransfer :: Word8 -> MachineState -> MachineState
 dmaTransfer value state = do
     let start = byteToWord value `shiftL` 8
-    state { oamData = P.fromList $ map (flip loadByte state) $ map (+ start) [0..255] }
+    let lookup = flip loadByte state . (+ start)
+    state { oamData = P.fromList $ map lookup [0..255] }
 
 instance Storage MachineState where
-    loadByte addr state =
-        if addr < 0x2000 then loadByte addr (ram state) else
-        if addr == 0x2000 then control state else
-        if addr == 0x2001 then mask state else
-        if addr == 0x2002 then status state else
-        if addr == 0x2003 then error "attempt to read from OAM Addr" else -- oamAddr state else
-        if addr == 0x2004 then error "attempt to read from OAM Data" else
-        if addr == 0x4014 then error "attempt to read from DMA Trigger 0x4014" else
-        error $ "Storage MachineState loadByte: Address out of range: " ++ addr
+    loadByte addr state
+        | addr <  0x2000 = loadByte (addr .&. 0x07ff) (ram state)
+        | addr == 0x2000 = controlReg state
+        | addr == 0x2001 = maskReg state
+        | addr == 0x2002 = statusReg state
+        | addr == 0x2003 = error "attempt to read from OAM Addr 0x2003"
+        | addr == 0x2004 = error "attempt to read from OAM Data 0x2004"
+        | addr == 0x4014 = error "attempt to read from DMA Trigger 0x4014"
+        | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr
 
-    storeByte addr value state =
-        if addr < 0x2000 then state { ram = storeByte addr value (ram state) } else
-        if addr == 0x2000 then setControlReg value state else
-        if addr == 0x2001 then setMaskReg value state else
-        if addr == 0x2002 then setStatusReg value state else
-        if addr == 0x2003 then error "attempt to write to OAM Addr" else -- setOAMAddr value state else
-        if addr == 0x2004 then error "attempt to write to OAM Data" else
-        if addr == 0x4014 then dmaTransfer value state else
-        error $ "Storage MachineState storeByte: Address out of range: " ++ addr
+    storeByte addr value state
+        | addr <  0x2000 = modifyRAM (storeByte (addr .&. 0x07ff) value) state
+        | addr == 0x2000 = setControlReg value state
+        | addr == 0x2001 = setMaskReg value state
+        | addr == 0x2002 = setStatusReg value state
+        | addr == 0x2003 = error "attempt to write to OAM Addr 0x2003"
+        | addr == 0x2004 = error "attempt to write to OAM Data 0x2004"
+        | addr == 0x4014 = dmaTransfer value state
+        | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr

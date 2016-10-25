@@ -13,29 +13,6 @@ setFlag word mask val =
         then word .|. mask
         else word .&. (complement mask)
 
-showBackground regs = (mask regs .&. 0x08) /= 0
-showSprites regs = (mask regs .&. 0x10) /= 0
-setSpriteOverflow val regs = regs { status = setFlag (status regs) 0x20 val }
-setSpriteZeroHit val regs = regs { status = setFlag (status regs) 0x40 val }
-setInVBlank val regs = regs { status = setFlag (status regs) 0x80 val }
-flipHorizontal sprite = (attribute sprite .&. 0x40) /= 0
-flip_vertical sprite = (attribute sprite .&. 0x80) /= 0
-priority sprite = if attribute sprite .&. 0x20 == 0 then AboveBackground else BelowBackground
-onScanline sprite y regs = (y >= spriteY) && (y < (spriteY + spriteHeight regs))
-    where spriteY = yPosition sprite
-inBoundingBox sprite x y regs =
-    (x >= spriteX) && (x < spriteX) && (y >= spriteY) && (y < (spriteY + spriteHeight regs))
-    where spriteX = xPosition sprite
-          spriteY = yPosition sprite
-tiles sprite regs =
-    case spriteSize regs of
-    Size8x8  -> Tile8x8 $ byteToWord index .|. base
-    Size8x16 -> Tile8x16 first $ first + 1
-    where base = spritePatternTableAddr regs
-          index = tileIndex sprite
-          addend = if (index .&. 1) /= 0 then 0x1000 else 0
-          first = byteToWord (index .&. 0xf3) + addend
-
 palette :: [RGB]
 palette = [
     (124,124,124),    (0,0,252),        (0,0,188),        (68,40,188),
