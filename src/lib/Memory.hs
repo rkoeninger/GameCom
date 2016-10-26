@@ -48,12 +48,9 @@ data Sprite = Sprite {
 }
 
 data SpriteSize = Size8x8 | Size8x16
-data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
 data SpritePriority = AboveBackground | BelowBackground
 data ScrollDirection = XDirection | YDirection
-type RGB = (Word8, Word8, Word8)
 data PixelLayer = BackgroundLayer | SpriteLayer
-type SpriteColor = (SpritePriority, RGB)
 
 data NametableAddress = NametableAddress {
     xIndex :: Word8,
@@ -162,11 +159,11 @@ modifyStatusReg f state = setStatusReg (f $ statusReg state) state
 modifyPCReg :: (Word16 -> Word16) -> MachineState -> MachineState
 modifyPCReg f state = setPCReg (f $ pcReg state) state
 
-screenWidth = 256
-screenHeight = 240
+screenWidth       = 256
+screenHeight      = 240
 cyclesPerScanline = 114
-vBlankScanline = 241
-lastScanline = 261
+vBlankScanline    = 241
+lastScanline      = 261
 
 xScrollOffset, yScrollOffset, vramAddrIncrement, spritePatternTableAddr, backgroundPatternTableAddr :: MachineState -> Word16
 xScrollOffset state              = if testBit (controlReg state) 0 then screenWidth else 0x0000
@@ -178,37 +175,14 @@ backgroundPatternTableAddr state = if testBit (controlReg state) 5 then 0x1000 e
 spriteSize :: MachineState -> SpriteSize
 spriteSize state = if testBit (controlReg state) 6 then Size8x16 else Size8x8
 
-spriteHeight :: MachineState -> Word8
-spriteHeight state =
-    case spriteSize state of
-    Size8x8  -> 8
-    Size8x16 -> 16
-
 vBlankNMI :: MachineState -> Bool
 vBlankNMI state = testBit (controlReg state) 7
 
 showBackground state = testBit (maskReg state) 3
-showSprites state = testBit (maskReg state) 4
-setSpriteOverflow value = modifyStatusReg (.|. (if value then 0x20 else 0x00))
-setSpriteZeroHit value  = modifyStatusReg (.|. (if value then 0x40 else 0x00))
-setInVBlank value       = modifyStatusReg (.|. (if value then 0x80 else 0x00))
-flipHorizontal sprite = testBit sprite 6
-flipVertical sprite = testBit sprite 7
-priority sprite = if testBit sprite 5 then BelowBackground else AboveBackground
-onScanline sprite y state = (y >= spriteY) && (y < (spriteY + spriteHeight state))
-    where spriteY = yPosition sprite
-inBoundingBox sprite x y state =
-    (x >= spriteX) && (x < spriteX) && (y >= spriteY) && (y < (spriteY + spriteHeight state))
-    where spriteX = xPosition sprite
-          spriteY = yPosition sprite
-tiles sprite state =
-    case spriteSize state of
-    Size8x8  -> Tile8x8 $ byteToWord i .|. base
-    Size8x16 -> Tile8x16 first $ first + 1
-    where base = spritePatternTableAddr state
-          i = tileIndex sprite
-          addend = if testBit i 0 then 0x1000 else 0
-          first = byteToWord (i .&. 0xf3) + addend
+showSprites state    = testBit (maskReg state) 4
+setSpriteOverflow value = if value then modifyStatusReg (.|. bit 5) else id
+setSpriteZeroHit value  = if value then modifyStatusReg (.|. bit 6) else id
+setInVBlank value       = if value then modifyStatusReg (.|. bit 7) else id
 
 {-
     scroll: PpuScroll,  // PPUSCROLL: 0x2005

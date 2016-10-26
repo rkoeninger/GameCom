@@ -1,6 +1,6 @@
 module ROM where
 
-import Data.Bits ((.|.), (.&.), shiftL, shiftR)
+import Data.Bits ((.|.), (.&.), shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -41,16 +41,16 @@ pROM = do
     chrBytes <- A.take (fromIntegral chrSize8KB `shiftL` 13)
 
     return $ ROM {
-        mirroring = if (flags6 .&. 0x08) /= 0 then FourScreen else
-                    if (flags6 .&. 0x01) /= 0 then Vertical else Horizontal,
-        trainer    = (flags6 .&. 0x04) /= 0,
-        persistent = (flags6 .&. 0x02) /= 0,
-        inesMapper =  flags6 `shiftR` 4,
+        mirroring = if testBit flags6 3 then FourScreen else
+                    if testBit flags6 0 then Vertical else Horizontal,
+        trainer    = testBit flags6 2,
+        persistent = testBit flags6 1,
+        inesMapper = flags6 `shiftR` 4,
         mapper     = (flags7 .&. 0xf0) .|. (flags6 `shiftR` 4),
-        playChoice = (flags7 .&. 0x02) /= 0,
-        unisystem  = (flags7 .&. 0x01) /= 0,
+        playChoice = testBit flags7 1,
+        unisystem  = testBit flags7 0,
         ramSize    = M.byteToWord ramSize8KB `shiftL` 13,
-        region     = if (flags9 .&. 0x01) == 0 then NTSC else PAL,
+        region     = if testBit flags9 0 then PAL else NTSC,
         prg = prgBytes,
         chr = chrBytes
     }

@@ -1,33 +1,67 @@
 module PPU where
 
-import Data.Bits (Bits, (.|.), (.&.), complement)
+import Data.Bits (Bits, (.|.), (.&.), complement, testBit)
 import Data.Word (Word8, Word16)
+import Data.Vector.Persistent (Vector, index, update)
 import Memory hiding (setFlag)
 
-getFlag :: (Bits b, Num b) => b -> b -> Bool
-getFlag word mask = (word .&. mask) /= 0
+type RGB = (Word8, Word8, Word8)
+type SpriteColor = (SpritePriority, RGB)
+data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
+type Screen = Vector RGB
 
-setFlag :: (Bits b) => b -> b -> Bool -> b
-setFlag word mask val =
-    if val
-        then word .|. mask
-        else word .&. (complement mask)
-
-palette :: [RGB]
 palette = [
-    (124,124,124),    (0,0,252),        (0,0,188),        (68,40,188),
-    (148,0,132),      (168,0,32),       (168,16,0),       (136,20,0),
-    (80,48,0),        (0,120,0),        (0,104,0),        (0,88,0),
-    (0,64,88),        (0,0,0),          (0,0,0),          (0,0,0),
-    (188,188,188),    (0,120,248),      (0,88,248),       (104,68,252),
-    (216,0,204),      (228,0,88),       (248,56,0),       (228,92,16),
-    (172,124,0),      (0,184,0),        (0,168,0),        (0,168,68),
-    (0,136,136),      (0,0,0),          (0,0,0),          (0,0,0),
-    (248,248,248),    (60,188,252),     (104,136,252),    (152,120,248),
-    (248,120,248),    (248,88,152),     (248,120,88),     (252,160,68),
-    (248,184,0),      (184,248,24),     (88,216,84),      (88,248,152),
-    (0,232,216),      (120,120,120),    (0,0,0),          (0,0,0),
-    (252,252,252),    (164,228,252),    (184,184,248),    (216,184,248),
-    (248,184,248),    (248,164,192),    (240,208,176),    (252,224,168),
-    (248,216,120),    (216,248,120),    (184,248,184),    (184,248,216),
-    (0,252,252),      (248,216,248),    (0,0,0),          (0,0,0)]
+    (0x7c, 0x7c, 0x7c), (0x00, 0x00, 0xfc), (0x00, 0x00, 0xbc), (0x44, 0x28, 0xbc),
+    (0x94, 0x00, 0x84), (0xa8, 0x00, 0x20), (0xa8, 0x10, 0x00), (0x88, 0x14, 0x00),
+    (0x50, 0x30, 0x00), (0x00, 0x78, 0x00), (0x00, 0x68, 0x00), (0x00, 0x58, 0x00),
+    (0x00, 0x40, 0x58), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xbc, 0xbc, 0xbc), (0x00, 0x78, 0xf8), (0x00, 0x58, 0xf8), (0x68, 0x44, 0xfc),
+    (0xd8, 0x00, 0xcc), (0xe4, 0x00, 0x58), (0xf8, 0x38, 0x00), (0xe4, 0x5c, 0x10),
+    (0xac, 0x7c, 0x00), (0x00, 0xb8, 0x00), (0x00, 0xa8, 0x00), (0x00, 0xa8, 0x44),
+    (0x00, 0x88, 0x88), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xf8, 0xf8, 0xf8), (0x3c, 0xbc, 0xfc), (0x68, 0x88, 0xfc), (0x98, 0x78, 0xf8),
+    (0xf8, 0x78, 0xf8), (0xf8, 0x58, 0x98), (0xf8, 0x78, 0x58), (0xfc, 0xa0, 0x44),
+    (0xf8, 0xb8, 0x00), (0xb8, 0xf8, 0x18), (0x58, 0xd8, 0x54), (0x58, 0xf8, 0x98),
+    (0x00, 0xe8, 0xd8), (0x78, 0x78, 0x78), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xfc, 0xfc, 0xfc), (0xa4, 0xe4, 0xfc), (0xb8, 0xb8, 0xf8), (0xd8, 0xb8, 0xf8),
+    (0xf8, 0xb8, 0xf8), (0xf8, 0xa4, 0xc0), (0xf0, 0xd0, 0xb0), (0xfc, 0xe0, 0xa8),
+    (0xf8, 0xd8, 0x78), (0xd8, 0xf8, 0x78), (0xb8, 0xf8, 0xb8), (0xb8, 0xf8, 0xd8),
+    (0x00, 0xfc, 0xfc), (0xf8, 0xd8, 0xf8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00)]
+
+getPixel :: (Int, Int) -> Screen -> RGB
+getPixel (x, y) screen = case index screen (x + y * 256) of
+    Just color -> color
+    _ -> error $ "Co-ordinates not on screen: " ++ show x ++ ", " ++ show y
+
+putPixel :: (Int, Int) -> RGB -> Screen -> Screen
+putPixel (x, y) color = update (x + y * 256) color
+
+spriteHeight :: MachineState -> Word8
+spriteHeight state =
+    case spriteSize state of
+    Size8x8  -> 8
+    Size8x16 -> 16
+
+onScanline :: Sprite -> Word8 -> MachineState -> Bool
+onScanline sprite y state = y >= spriteY && y < spriteY + spriteHeight state
+    where spriteY = yPosition sprite
+
+inBoundingBox :: Sprite -> Word8 -> Word8 -> MachineState -> Bool
+inBoundingBox sprite x y state =
+    x >= spriteX && x < spriteX && y >= spriteY && y < spriteY + spriteHeight state
+    where spriteX = xPosition sprite
+          spriteY = yPosition sprite
+
+tiles :: Sprite -> MachineState -> SpriteTile
+tiles sprite state =
+    case spriteSize state of
+    Size8x8  -> Tile8x8 $ byteToWord i .|. base
+    Size8x16 -> Tile8x16 first $ first + 1
+    where base = spritePatternTableAddr state
+          i = tileIndex sprite
+          addend = if testBit i 0 then 0x1000 else 0
+          first = byteToWord (i .&. 0xf3) + addend
+
+priority sprite    = if testBit sprite 5 then BelowBackground else AboveBackground
+flipHorizontal sprite = testBit sprite 6
+flipVertical sprite   = testBit sprite 7

@@ -33,12 +33,12 @@ type Loader = MachineState -> Word8
 type Storer = Word8 -> MachineState -> MachineState
 type Addresser = (Loader, Storer)
 type AddresserBuilder = MachineState -> (Addresser, MachineState)
-type Instruction = Addresser -> MachineState -> MachineState
+type Operation = Addresser -> MachineState -> MachineState
 
 implicitMode :: AddresserBuilder
 implicitMode state = ((loader, storer), state)
-    where loader _ = error "this instruction should not access memory"
-          storer _ _ = error "this instruction should not access memory"
+    where loader _ = error "This operation should not access memory"
+          storer _ _ = error "This operation should not access memory"
 
 accumulatorMode :: AddresserBuilder
 accumulatorMode state = ((loader, storer), state)
@@ -99,7 +99,7 @@ addWithCarry val state = do
 adc (loader, _) = transfer loader addWithCarry
 sbc (loader, _) = transfer (negate . loader) addWithCarry
 
-comp :: (MachineState -> Word8) -> Instruction
+comp :: (MachineState -> Word8) -> Operation
 comp reg (loader, _) state = do
     let result = byteToWord (reg state) - byteToWord (loader state)
     setZN (wordToByte result) $ setCarryFlag (testBit result 9) state
@@ -119,18 +119,18 @@ bit (loader, _) state = do
     let zero = val .&. aReg state == 0
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
-shiftLeft :: Bool -> Instruction
+shiftLeft :: Bool -> Operation
 shiftLeft lsb (loader, storer) state = do
     let val = loader state
     let carry = testBit val 7
-    let result = (val `shiftL` 1) .|. (if lsb && carryFlag state then 0x01 else 0x00)
+    let result = val `shiftL` 1 .|. (if lsb && carryFlag state then 0x01 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
-shiftRight :: Bool -> Instruction
+shiftRight :: Bool -> Operation
 shiftRight msb (loader, storer) state = do
     let val = loader state
     let carry = testBit val 0
-    let result = (val `shiftR` 1) .|. (if msb && carryFlag state then 0x80 else 0x00)
+    let result = val `shiftR` 1 .|. (if msb && carryFlag state then 0x80 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
 rol = shiftLeft  True
@@ -164,7 +164,7 @@ clv _ = setOverflowFlag False
 cld _ = setDecimalFlag  False -- TODO: decimal flag isn't used since BCD commands are disabled
 sed _ = setDecimalFlag  True
 
-branch :: (MachineState -> Bool) -> Instruction
+branch :: (MachineState -> Bool) -> Operation
 branch condf _ state =
     if condf state
         then uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
@@ -233,7 +233,7 @@ eval :: Word8 -> MachineState -> MachineState
 eval opCode = uncurry op . builder
     where (op, builder) = decode opCode
 
-decode :: Word8 -> (Instruction, AddresserBuilder)
+decode :: Word8 -> (Operation, AddresserBuilder)
 decode 0xa1 = (lda, indexedIndirectXMode)
 decode 0xa5 = (lda, zeroPageMode)
 decode 0xa9 = (lda, immediateMode)
