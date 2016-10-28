@@ -59,31 +59,43 @@ data NametableAddress = NametableAddress {
 }
 
 data MachineState = MachineState {
-    ram        :: RAM,
-    aReg       :: Word8,
-    xReg       :: Word8,
-    yReg       :: Word8,
-    sReg       :: Word8,
-    flagReg    :: Word8,
-    pcReg      :: Word16,
-    controlReg :: Word8,
-    maskReg    :: Word8,
-    statusReg  :: Word8,
-    oamData    :: RAM
+    ram          :: RAM,
+    aReg         :: Word8,
+    xReg         :: Word8,
+    yReg         :: Word8,
+    sReg         :: Word8,
+    flagReg      :: Word8,
+    pcReg        :: Word16,
+    controlReg   :: Word8,
+    maskReg      :: Word8,
+    statusReg    :: Word8,
+    oamAddr      :: Word8,
+    oamData      :: RAM,
+    ppuAddr      :: Word16,
+    ppuAddrHi    :: Bool,
+    ppuScrollX   :: Word8,
+    ppuScrollY   :: Word8,
+    ppuScrollDir :: ScrollDirection
 }
 
 defaultState = MachineState {
-    ram        = malloc 2048,
-    aReg       = 0x00,
-    xReg       = 0x00,
-    yReg       = 0x00,
-    sReg       = 0xfd,
-    flagReg    = unusedMask .|. irqMask,
-    pcReg      = 0xc000,
-    controlReg = 0x00,
-    maskReg    = 0x00,
-    statusReg  = 0x00,
-    oamData    = malloc 256
+    ram          = malloc 2048,
+    aReg         = 0x00,
+    xReg         = 0x00,
+    yReg         = 0x00,
+    sReg         = 0xfd,
+    flagReg      = unusedMask .|. irqMask,
+    pcReg        = 0xc000,
+    controlReg   = 0x00,
+    maskReg      = 0x00,
+    statusReg    = 0x00,
+    oamAddr      = 0x00,
+    oamData      = malloc 256,
+    ppuAddr      = 0x0000,
+    ppuAddrHi    = True,
+    ppuScrollX   = 0x00,
+    ppuScrollY   = 0x00,
+    ppuScrollDir = XDirection
 }
 
 modifyRAM f state = state { ram = f (ram state) }
@@ -184,10 +196,29 @@ setSpriteOverflow value = if value then modifyStatusReg (.|. bit 5) else id
 setSpriteZeroHit value  = if value then modifyStatusReg (.|. bit 6) else id
 setInVBlank value       = if value then modifyStatusReg (.|. bit 7) else id
 
-{-
-    scroll: PpuScroll,  // PPUSCROLL: 0x2005
-    addr: PpuAddr,      // PPUADDR: 0x2006
--}
+incOAMAddr :: MachineState -> MachineState
+incOAMAddr state = state { oamAddr = oamAddr state + 1 }
+
+loadOAMByte :: MachineState -> Word8
+loadOAMByte state = case index (oamData state) (fromIntegral $ oamAddr state) of
+    Just value -> value
+    _ -> error $ "Invalid OAM address: " ++ show (oamAddr state)
+
+storeOAMByte :: Word8 -> MachineState -> MachineState
+storeOAMByte value state = (incOAMAddr state) { oamData = update (fromIntegral $ oamAddr state) value (oamData state) }
+
+storePPUAddrByte :: Word8 -> MachineState -> MachineState
+storePPUAddrByte value state = state { ppuAddr = newAddr, ppuAddrHi = not hi }
+    where hi = ppuAddrHi state
+          addr = ppuAddr state
+          value16 = byteToWord value
+          newAddr = if hi then (addr .&. 0x00ff) .|. (value16 `shiftL` 8)
+                          else (addr .&. 0xff00) .|. value16
+
+storePPUScrollByte :: Word8 -> MachineState -> MachineState
+storePPUScrollByte value state = case ppuScrollDir state of
+    XDirection -> state { ppuScrollX = value, ppuScrollDir = YDirection }
+    YDirection -> state { ppuScrollY = value, ppuScrollDir = XDirection }
 
 dmaTransfer :: Word8 -> MachineState -> MachineState
 dmaTransfer value state = do
@@ -202,7 +233,10 @@ instance Storage MachineState where
         | addr == 0x2001 = maskReg state
         | addr == 0x2002 = statusReg state
         | addr == 0x2003 = error "attempt to read from OAM Addr 0x2003"
-        | addr == 0x2004 = error "attempt to read from OAM Data 0x2004"
+        | addr == 0x2004 = loadOAMByte state
+        | addr == 0x2005 = error "attempt to read from PPU Scroll 0x2005"
+        | addr == 0x2006 = error "attempt to read from PPU Addr 0x2006"
+        | addr == 0x2007 = error "attempt to read from PPU Data 0x2007"
         | addr == 0x4014 = error "attempt to read from DMA Trigger 0x4014"
         | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr
 
@@ -211,7 +245,10 @@ instance Storage MachineState where
         | addr == 0x2000 = setControlReg value state
         | addr == 0x2001 = setMaskReg value state
         | addr == 0x2002 = setStatusReg value state
-        | addr == 0x2003 = error "attempt to write to OAM Addr 0x2003"
-        | addr == 0x2004 = error "attempt to write to OAM Data 0x2004"
+        | addr == 0x2003 = state { oamAddr = value }
+        | addr == 0x2004 = storeOAMByte value state
+        | addr == 0x2005 = storePPUScrollByte value state
+        | addr == 0x2006 = storePPUAddrByte value state
+        | addr == 0x2007 = error "attempt to write to PPU Data 0x2007"
         | addr == 0x4014 = dmaTransfer value state
         | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr
