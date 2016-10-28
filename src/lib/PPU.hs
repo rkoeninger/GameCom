@@ -34,7 +34,7 @@ getPixel (x, y) screen = case index screen (x + y * 256) of
     _ -> error $ "Co-ordinates not on screen: " ++ show x ++ ", " ++ show y
 
 putPixel :: (Int, Int) -> RGB -> Screen -> Screen
-putPixel (x, y) color = update (x + y * 256) color
+putPixel (x, y) = update (x + y * 256)
 
 spriteHeight :: MachineState -> Word8
 spriteHeight state =

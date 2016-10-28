@@ -16,11 +16,11 @@ loadWordIncPc :: MachineState -> (Word16, MachineState)
 loadWordIncPc state = (transfer pcReg loadWord state, modifyPCReg (+ 2) state)
 
 pushByte :: Word8 -> MachineState -> MachineState
-pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + (byteToWord $ sReg state)) val state
+pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + byteToWord (sReg state)) val state
 
 -- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
 pushWord :: Word16 -> MachineState -> MachineState
-pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + (byteToWord $ sReg state - 1)) val state
+pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + byteToWord (sReg state - 1)) val state
 
 popByte :: MachineState -> (Word8, MachineState)
 popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 1) state)
@@ -60,19 +60,19 @@ zeroPageMode :: AddresserBuilder
 zeroPageMode state = mapFst (memoryMode . byteToWord) (loadByteIncPc state)
 
 zeroPageXMode :: AddresserBuilder
-zeroPageXMode state = mapFst (memoryMode . byteToWord . (+ (xReg state))) (loadByteIncPc state)
+zeroPageXMode state = mapFst (memoryMode . byteToWord . (+ xReg state)) (loadByteIncPc state)
 
 zeroPageYMode :: AddresserBuilder
-zeroPageYMode state = mapFst (memoryMode . byteToWord . (+ (yReg state))) (loadByteIncPc state)
+zeroPageYMode state = mapFst (memoryMode . byteToWord . (+ yReg state)) (loadByteIncPc state)
 
 absoluteMode :: AddresserBuilder
 absoluteMode state = mapFst memoryMode (loadWordIncPc state)
 
 absoluteXMode :: AddresserBuilder
-absoluteXMode state = mapFst (memoryMode . (+ (byteToWord $ xReg state))) (loadWordIncPc state)
+absoluteXMode state = mapFst (memoryMode . (+ byteToWord (xReg state))) (loadWordIncPc state)
 
 absoluteYMode :: AddresserBuilder
-absoluteYMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state))) (loadWordIncPc state)
+absoluteYMode state = mapFst (memoryMode . (+ byteToWord (yReg state))) (loadWordIncPc state)
 
 indexedIndirectXMode :: AddresserBuilder
 indexedIndirectXMode state = mapFst (memoryMode . flip loadWord state . (+ (byteToWord $ xReg state)) . byteToWord) (loadByteIncPc state)
@@ -171,13 +171,13 @@ branch condf _ state =
         else state
 
 bpl = branch $ negativeFlag >>> not
-bmi = branch $ negativeFlag
 bvc = branch $ overflowFlag >>> not
-bvs = branch $ overflowFlag
 bcc = branch $ carryFlag >>> not
-bcs = branch $ carryFlag
 bne = branch $ zeroFlag >>> not
-beq = branch $ zeroFlag
+bvs = branch overflowFlag
+bmi = branch negativeFlag
+bcs = branch carryFlag
+beq = branch zeroFlag
 
 jmp _ = uncurry setPCReg . loadWordIncPc
 

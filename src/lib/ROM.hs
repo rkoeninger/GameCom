@@ -40,7 +40,7 @@ pROM = do
     prgBytes <- A.take (fromIntegral prgSize16KB `shiftL` 14)
     chrBytes <- A.take (fromIntegral chrSize8KB `shiftL` 13)
 
-    return $ ROM {
+    return ROM {
         mirroring = if testBit flags6 3 then FourScreen else
                     if testBit flags6 0 then Vertical else Horizontal,
         trainer    = testBit flags6 2,

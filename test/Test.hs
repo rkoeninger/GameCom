@@ -1,5 +1,6 @@
 module Main where
 
+import Control.Monad (forM_)
 import qualified Data.ByteString as B
 import Test.Hspec
 import GameCom
@@ -8,6 +9,9 @@ import CPU
 import ROM
 
 x |> f = f x
+
+cpuFlagsShouldBe state flags value = forM_ flags testFlag
+    where testFlag f = f state `shouldBe` value
 
 main :: IO ()
 main = hspec $ do
@@ -37,9 +41,9 @@ main = hspec $ do
             negativeFlag state `shouldBe` False
             zeroFlag state `shouldBe` False
 
-    describe "ROM" $ do
+    describe "ROM" $
         it "rom file header should begin with magic" $ do
-            let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ take 12 (repeat 0x00)
+            let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ replicate 12 0x00
             let rom = ROM {
                 mirroring = Horizontal,
                 trainer = False,
@@ -65,10 +69,7 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 54
-            zeroFlag state `shouldBe` False
-            negativeFlag state `shouldBe` False
-            overflowFlag state `shouldBe` False
-            carryFlag state `shouldBe` False
+            cpuFlagsShouldBe state [zeroFlag, negativeFlag, overflowFlag, carryFlag] False
 
         it "should perform simple, previous carry, non-overflow, addition" $ do
             let state = defaultState
@@ -80,10 +81,7 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 55
-            zeroFlag state `shouldBe` False
-            negativeFlag state `shouldBe` False
-            overflowFlag state `shouldBe` False
-            carryFlag state `shouldBe` False
+            cpuFlagsShouldBe state [zeroFlag, negativeFlag, overflowFlag, carryFlag] False
 
         it "should perform simple, non-carried, non-overflow, addition resulting in carry" $ do
             let state = defaultState
@@ -94,10 +92,8 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 44
-            zeroFlag state `shouldBe` False
-            negativeFlag state `shouldBe` False
-            overflowFlag state `shouldBe` True
-            carryFlag state `shouldBe` True
+            cpuFlagsShouldBe state [zeroFlag, negativeFlag] False
+            cpuFlagsShouldBe state [overflowFlag, carryFlag] True
 
         it "should perform simple, previous carry, non-overflow, addition resulting in carry" $ do
             let state = defaultState
@@ -109,7 +105,5 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 45
-            zeroFlag state `shouldBe` False
-            negativeFlag state `shouldBe` False
-            overflowFlag state `shouldBe` True
-            carryFlag state `shouldBe` True
+            cpuFlagsShouldBe state [zeroFlag, negativeFlag] False
+            cpuFlagsShouldBe state [overflowFlag, carryFlag] True

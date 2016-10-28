@@ -38,7 +38,7 @@ instance Storage RAM where
         case index ram (fromIntegral addr) of
         Just value -> value
         _ -> error $ "invalid RAM address: " ++ show addr
-    storeByte addr value ram = update (fromIntegral addr) value ram
+    storeByte = update . fromIntegral
 
 data Sprite = Sprite {
     xPosition :: Word8,
@@ -105,7 +105,7 @@ setXReg value state = (setZN value state) { xReg = value }
 setYReg value state = (setZN value state) { yReg = value }
 setSReg value state = state { sReg = value }
 setPCReg value state = state { pcReg = value }
-setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. (complement breakMask) }
+setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. complement breakMask }
 setControlReg value state = state { controlReg = value }
 setMaskReg value state = state { maskReg = value }
 setStatusReg value state = state { statusReg = value }
@@ -114,14 +114,8 @@ setZN :: Word8 -> MachineState -> MachineState
 setZN value = setZeroFlag (value == 0) . setNegativeFlag (testBit value 7)
 
 setFlag :: Word8 -> Bool -> MachineState -> MachineState
-setFlag mask value state = 
-    let flags = flagReg state in
-    state {
-        flagReg =
-            if value
-                then flags .|. mask
-                else flags .&. (complement mask)
-    }
+setFlag mask value state = state { flagReg = op mask (flagReg state) }
+    where op = if value then (.|.) else (.&.) . complement
 
 getFlag :: Word8 -> MachineState -> Bool
 getFlag mask state = flagReg state .&. mask /= 0
@@ -166,10 +160,8 @@ modifyAReg f state = setAReg (f $ aReg state) state
 modifyXReg f state = setXReg (f $ xReg state) state
 modifyYReg f state = setYReg (f $ yReg state) state
 modifySReg f state = setSReg (f $ sReg state) state
-modifyStatusReg f state = setStatusReg (f $ statusReg state) state
-
-modifyPCReg :: (Word16 -> Word16) -> MachineState -> MachineState
 modifyPCReg f state = setPCReg (f $ pcReg state) state
+modifyStatusReg f state = setStatusReg (f $ statusReg state) state
 
 screenWidth       = 256
 screenHeight      = 240
@@ -177,21 +169,23 @@ cyclesPerScanline = 114
 vBlankScanline    = 241
 lastScanline      = 261
 
-xScrollOffset, yScrollOffset, vramAddrIncrement, spritePatternTableAddr, backgroundPatternTableAddr :: MachineState -> Word16
-xScrollOffset state              = if testBit (controlReg state) 0 then screenWidth else 0x0000
-yScrollOffset state              = if testBit (controlReg state) 1 then screenHeight else 0x0000
-vramAddrIncrement state          = if testBit (controlReg state) 2 then 0x0020 else 0x0001
-spritePatternTableAddr state     = if testBit (controlReg state) 4 then 0x1000 else 0x0000
-backgroundPatternTableAddr state = if testBit (controlReg state) 5 then 0x1000 else 0x0000
+xScrollOffset state              = if testBit (controlReg state) 0 then screenWidth else 0x0000 :: Word16
+yScrollOffset state              = if testBit (controlReg state) 1 then screenHeight else 0x0000 :: Word16
+vramAddrIncrement state          = if testBit (controlReg state) 2 then 0x0020 else 0x0001 :: Word16
+spritePatternTableAddr state     = if testBit (controlReg state) 4 then 0x1000 else 0x0000 :: Word16
+backgroundPatternTableAddr state = if testBit (controlReg state) 5 then 0x1000 else 0x0000 :: Word16
+spriteSize state                 = if testBit (controlReg state) 6 then Size8x16 else Size8x8
+vBlankNMI state                  =    testBit (controlReg state) 7
 
-spriteSize :: MachineState -> SpriteSize
-spriteSize state = if testBit (controlReg state) 6 then Size8x16 else Size8x8
+isGrayscale state        = testBit (maskReg state) 0
+showBackgroundLeft state = testBit (maskReg state) 1
+showSpritesLeft state    = testBit (maskReg state) 2
+showBackground state     = testBit (maskReg state) 3
+showSprites state        = testBit (maskReg state) 4
+enhancedReds state       = testBit (maskReg state) 5
+enhancedGreens state     = testBit (maskReg state) 6
+enhancedBlues state      = testBit (maskReg state) 7
 
-vBlankNMI :: MachineState -> Bool
-vBlankNMI state = testBit (controlReg state) 7
-
-showBackground state = testBit (maskReg state) 3
-showSprites state    = testBit (maskReg state) 4
 setSpriteOverflow value = if value then modifyStatusReg (.|. bit 5) else id
 setSpriteZeroHit value  = if value then modifyStatusReg (.|. bit 6) else id
 setInVBlank value       = if value then modifyStatusReg (.|. bit 7) else id
