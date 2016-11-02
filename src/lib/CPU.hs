@@ -7,8 +7,6 @@ import Memory
 
 mapFst f (x, y) = (f x, y)
 
-transfer from to state = to (from state) state
-
 loadByteIncPc :: MachineState -> (Word8, MachineState)
 loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
 

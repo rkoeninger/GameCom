@@ -2,10 +2,13 @@
 
 module Memory where
 
-import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
+import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit, setBit)
 import Data.Vector.Persistent (Vector, update, index, fromList)
 import qualified Data.Vector.Persistent as P
 import Data.Word (Word8, Word16)
+
+transfer :: (a -> b) -> (b -> a -> c) -> a -> c
+transfer from to state = to (from state) state
 
 byteToWord :: Word8 -> Word16
 byteToWord = fromIntegral
@@ -17,7 +20,7 @@ class Storage m where
     loadByte :: Word16 -> m -> Word8
 
     loadWord :: Word16 -> m -> Word16
-    loadWord addr storage = b0 .|. (b1 `shiftL` 8)
+    loadWord addr storage = b0 .|. b1 `shiftL` 8
         where b0 = byteToWord $ loadByte addr storage
               b1 = byteToWord $ loadByte (addr + 1) storage
 
@@ -75,7 +78,9 @@ data MachineState = MachineState {
     ppuAddrHi    :: Bool,
     ppuScrollX   :: Word8,
     ppuScrollY   :: Word8,
-    ppuScrollDir :: ScrollDirection
+    ppuScrollDir :: ScrollDirection,
+    nametables   :: RAM,
+    palette      :: RAM
 }
 
 defaultState = MachineState {
@@ -95,20 +100,21 @@ defaultState = MachineState {
     ppuAddrHi    = True,
     ppuScrollX   = 0x00,
     ppuScrollY   = 0x00,
-    ppuScrollDir = XDirection
+    ppuScrollDir = XDirection,
+    nametables   = malloc 2048,
+    palette      = malloc 32
 }
 
-modifyRAM f state = state { ram = f (ram state) }
-
-setAReg value state = (setZN value state) { aReg = value }
-setXReg value state = (setZN value state) { xReg = value }
-setYReg value state = (setZN value state) { yReg = value }
-setSReg value state = state { sReg = value }
-setPCReg value state = state { pcReg = value }
-setFlagReg value state = state { flagReg = (value .|. unusedMask) .&. complement breakMask }
+setRAM        value state = state { ram = value }
+setAReg       value state = (setZN value state) { aReg = value }
+setXReg       value state = (setZN value state) { xReg = value }
+setYReg       value state = (setZN value state) { yReg = value }
+setSReg       value state = state { sReg = value }
+setPCReg      value state = state { pcReg = value }
+setFlagReg    value state = state { flagReg = (value .|. unusedMask) .&. complement breakMask }
 setControlReg value state = state { controlReg = value }
-setMaskReg value state = state { maskReg = value }
-setStatusReg value state = state { statusReg = value }
+setMaskReg    value state = state { maskReg = value }
+setStatusReg  value state = state { statusReg = value }
 
 setZN :: Word8 -> MachineState -> MachineState
 setZN value = setZeroFlag (value == 0) . setNegativeFlag (testBit value 7)
@@ -156,12 +162,13 @@ breakFlag    = getFlag breakMask
 overflowFlag = getFlag overflowMask
 negativeFlag = getFlag negativeMask
 
-modifyAReg f state = setAReg (f $ aReg state) state
-modifyXReg f state = setXReg (f $ xReg state) state
-modifyYReg f state = setYReg (f $ yReg state) state
-modifySReg f state = setSReg (f $ sReg state) state
-modifyPCReg f state = setPCReg (f $ pcReg state) state
-modifyStatusReg f state = setStatusReg (f $ statusReg state) state
+modifyRAM       f = transfer (f . ram) setRAM
+modifyAReg      f = transfer (f . aReg) setAReg
+modifyXReg      f = transfer (f . xReg) setXReg
+modifyYReg      f = transfer (f . yReg) setYReg
+modifySReg      f = transfer (f . sReg) setSReg
+modifyPCReg     f = transfer (f . pcReg) setPCReg
+modifyStatusReg f = transfer (f . statusReg) setStatusReg
 
 screenWidth       = 256
 screenHeight      = 240
@@ -169,26 +176,27 @@ cyclesPerScanline = 114
 vBlankScanline    = 241
 lastScanline      = 261
 
-xScrollOffset state              = if testBit (controlReg state) 0 then screenWidth else 0x0000 :: Word16
-yScrollOffset state              = if testBit (controlReg state) 1 then screenHeight else 0x0000 :: Word16
-vramAddrIncrement state          = if testBit (controlReg state) 2 then 0x0020 else 0x0001 :: Word16
-spritePatternTableAddr state     = if testBit (controlReg state) 4 then 0x1000 else 0x0000 :: Word16
-backgroundPatternTableAddr state = if testBit (controlReg state) 5 then 0x1000 else 0x0000 :: Word16
-spriteSize state                 = if testBit (controlReg state) 6 then Size8x16 else Size8x8
-vBlankNMI state                  =    testBit (controlReg state) 7
+xScrollOffset              state = if testBit (controlReg state) 0 then screenWidth else 0x0000 :: Word16
+yScrollOffset              state = if testBit (controlReg state) 1 then screenHeight else 0x0000 :: Word16
+vramAddrIncrement          state = if testBit (controlReg state) 2 then 0x0020 else 0x0001 :: Word16
+spritePatternTableAddr     state = if testBit (controlReg state) 3 then 0x1000 else 0x0000 :: Word16
+backgroundPatternTableAddr state = if testBit (controlReg state) 4 then 0x1000 else 0x0000 :: Word16
+spriteSize                 state = if testBit (controlReg state) 5 then Size8x16 else Size8x8
+ppuMasterSlave             state =    testBit (controlReg state) 6
+vBlankNMI                  state =    testBit (controlReg state) 7
 
-isGrayscale state        = testBit (maskReg state) 0
+isGrayscale        state = testBit (maskReg state) 0
 showBackgroundLeft state = testBit (maskReg state) 1
-showSpritesLeft state    = testBit (maskReg state) 2
-showBackground state     = testBit (maskReg state) 3
-showSprites state        = testBit (maskReg state) 4
-enhancedReds state       = testBit (maskReg state) 5
-enhancedGreens state     = testBit (maskReg state) 6
-enhancedBlues state      = testBit (maskReg state) 7
+showSpritesLeft    state = testBit (maskReg state) 2
+showBackground     state = testBit (maskReg state) 3
+showSprites        state = testBit (maskReg state) 4
+enhancedReds       state = testBit (maskReg state) 5
+enhancedGreens     state = testBit (maskReg state) 6
+enhancedBlues      state = testBit (maskReg state) 7
 
 setSpriteOverflow value = if value then modifyStatusReg (.|. bit 5) else id
-setSpriteZeroHit value  = if value then modifyStatusReg (.|. bit 6) else id
-setInVBlank value       = if value then modifyStatusReg (.|. bit 7) else id
+setSpriteZeroHit  value = if value then modifyStatusReg (.|. bit 6) else id
+setInVBlank       value = if value then modifyStatusReg (.|. bit 7) else id
 
 incOAMAddr :: MachineState -> MachineState
 incOAMAddr state = state { oamAddr = oamAddr state + 1 }
@@ -206,8 +214,8 @@ storePPUAddrByte value state = state { ppuAddr = newAddr, ppuAddrHi = not hi }
     where hi = ppuAddrHi state
           addr = ppuAddr state
           value16 = byteToWord value
-          newAddr = if hi then (addr .&. 0x00ff) .|. (value16 `shiftL` 8)
-                          else (addr .&. 0xff00) .|. value16
+          newAddr = if hi then addr .&. 0x00ff .|. value16 `shiftL` 8
+                          else addr .&. 0xff00 .|. value16
 
 storePPUScrollByte :: Word8 -> MachineState -> MachineState
 storePPUScrollByte value state = case ppuScrollDir state of

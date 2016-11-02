@@ -10,8 +10,10 @@ import ROM
 
 x |> f = f x
 
-cpuFlagsShouldBe state flags value = forM_ flags testFlag
-    where testFlag f = f state `shouldBe` value
+infixl 1 |>
+
+allShouldBeFor fs value state = forM_ fs test
+    where test f = f state `shouldBe` value
 
 main :: IO ()
 main = hspec $ do
@@ -38,8 +40,7 @@ main = hspec $ do
 
         it "positive numbers should not set the zero or negative flags in the status register" $ do
             let state = setZN 0x01 defaultState
-            negativeFlag state `shouldBe` False
-            zeroFlag state `shouldBe` False
+            allShouldBeFor [negativeFlag, zeroFlag] False state
 
     describe "ROM" $
         it "rom file header should begin with magic" $ do
@@ -69,7 +70,7 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 54
-            cpuFlagsShouldBe state [zeroFlag, negativeFlag, overflowFlag, carryFlag] False
+            allShouldBeFor [zeroFlag, negativeFlag, overflowFlag, carryFlag] False state
 
         it "should perform simple, previous carry, non-overflow, addition" $ do
             let state = defaultState
@@ -81,7 +82,7 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 55
-            cpuFlagsShouldBe state [zeroFlag, negativeFlag, overflowFlag, carryFlag] False
+            allShouldBeFor [zeroFlag, negativeFlag, overflowFlag, carryFlag] False state
 
         it "should perform simple, non-carried, non-overflow, addition resulting in carry" $ do
             let state = defaultState
@@ -92,8 +93,8 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 44
-            cpuFlagsShouldBe state [zeroFlag, negativeFlag] False
-            cpuFlagsShouldBe state [overflowFlag, carryFlag] True
+            allShouldBeFor [zeroFlag, negativeFlag] False state
+            allShouldBeFor [overflowFlag, carryFlag] True state
 
         it "should perform simple, previous carry, non-overflow, addition resulting in carry" $ do
             let state = defaultState
@@ -105,5 +106,5 @@ main = hspec $ do
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> step
             aReg state `shouldBe` 45
-            cpuFlagsShouldBe state [zeroFlag, negativeFlag] False
-            cpuFlagsShouldBe state [overflowFlag, carryFlag] True
+            allShouldBeFor [zeroFlag, negativeFlag] False state
+            allShouldBeFor [overflowFlag, carryFlag] True state
