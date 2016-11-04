@@ -62,6 +62,7 @@ data NametableAddress = NametableAddress {
 }
 
 data MachineState = MachineState {
+    cycleCount   :: Int,
     ram          :: RAM,
     aReg         :: Word8,
     xReg         :: Word8,
@@ -84,6 +85,7 @@ data MachineState = MachineState {
 }
 
 defaultState = MachineState {
+    cycleCount   = 0,
     ram          = malloc 2048,
     aReg         = 0x00,
     xReg         = 0x00,
@@ -104,6 +106,8 @@ defaultState = MachineState {
     nametables   = malloc 2048,
     palette      = malloc 32
 }
+
+addCycles cycles state = state { cycleCount = (cycleCount state) + cycles }
 
 setRAM        value state = state { ram = value }
 setAReg       value state = (setZN value state) { aReg = value }

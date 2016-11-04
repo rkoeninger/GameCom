@@ -55,29 +55,49 @@ memoryMode addr = (loader, storer)
           storer = storeByte addr
 
 zpgMode :: AddresserBuilder
-zpgMode state = mapFst (memoryMode . byteToWord) (loadByteIncPc state)
+zpgMode state = mapFst mode (loadByteIncPc state)
+    where mode = byteToWord
+             >>> memoryMode
 
 zpxMode :: AddresserBuilder
-zpxMode state = mapFst (memoryMode . byteToWord . (+ xReg state)) (loadByteIncPc state)
+zpxMode state = mapFst mode (loadByteIncPc state)
+    where mode = (+ xReg state)
+             >>> byteToWord
+             >>> memoryMode
 
 zpyMode :: AddresserBuilder
-zpyMode state = mapFst (memoryMode . byteToWord . (+ yReg state)) (loadByteIncPc state)
+zpyMode state = mapFst mode (loadByteIncPc state)
+    where mode = (+ yReg state)
+             >>> byteToWord
+             >>> memoryMode
 
 absMode :: AddresserBuilder
 absMode state = mapFst memoryMode (loadWordIncPc state)
 
 abxMode :: AddresserBuilder
-abxMode state = mapFst (memoryMode . (+ byteToWord (xReg state))) (loadWordIncPc state)
+abxMode state = mapFst mode (loadWordIncPc state)
+    where mode = (+ byteToWord (xReg state))
+             >>> memoryMode
 
 abyMode :: AddresserBuilder
-abyMode state = mapFst (memoryMode . (+ byteToWord (yReg state))) (loadWordIncPc state)
+abyMode state = mapFst mode (loadWordIncPc state)
+    where mode = (+ byteToWord (yReg state))
+             >>> memoryMode
 
 iixMode :: AddresserBuilder
-iixMode state = mapFst (memoryMode . flip loadWord state . (+ (byteToWord $ xReg state)) . byteToWord) (loadByteIncPc state)
+iixMode state = mapFst mode (loadByteIncPc state)
+    where mode = byteToWord
+             >>> (+ (byteToWord $ xReg state))
+             >>> flip loadWord state
+             >>> memoryMode
 
 -- FIXME: this needs some alternate behavior for zero page mem.rs:35
 iiyMode :: AddresserBuilder
-iiyMode state = mapFst (memoryMode . (+ (byteToWord $ yReg state)) . flip loadWord state . byteToWord) (loadByteIncPc state)
+iiyMode state = mapFst mode (loadByteIncPc state)
+    where mode = byteToWord
+             >>> flip loadWord state
+             >>> (+ (byteToWord $ yReg state))
+             >>> memoryMode
 
 lda (loader, _) = transfer loader setAReg
 ldx (loader, _) = transfer loader setXReg
@@ -90,8 +110,8 @@ addWithCarry val state = do
     let a = aReg state
     let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 0x0001 else 0x0000)
     let resultByte = wordToByte resultWord
-    let carry = resultWord .&. 0x0100 /= 0
-    let overflow = (a .&. 0x80 == val .&. 0x80) && (a .&. 0x80 /= resultByte .&. 0x80)
+    let carry = testBit resultWord 8
+    let overflow = (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
     setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
 adc (loader, _) = transfer loader addWithCarry
@@ -100,7 +120,7 @@ sbc (loader, _) = transfer (negate . loader) addWithCarry
 comp :: (MachineState -> Word8) -> Operation
 comp reg (loader, _) state = do
     let result = byteToWord (reg state) - byteToWord (loader state)
-    setZN (wordToByte result) $ setCarryFlag (testBit result 9) state
+    setZN (wordToByte result) $ setCarryFlag (testBit result 8) state
 
 cmp = comp aReg
 cpx = comp xReg
@@ -172,8 +192,8 @@ bpl = branch $ negativeFlag >>> not
 bvc = branch $ overflowFlag >>> not
 bcc = branch $ carryFlag >>> not
 bne = branch $ zeroFlag >>> not
-bvs = branch overflowFlag
 bmi = branch negativeFlag
+bvs = branch overflowFlag
 bcs = branch carryFlag
 beq = branch zeroFlag
 
@@ -190,7 +210,9 @@ jsr _ state = do
     let (addr, state) = loadWordIncPc state
     setPCReg addr $ pushWord (pcReg state - 1) state
 
-rts _ = uncurry setPCReg . mapFst (+ 1) . popWord
+rts _ = popWord
+    >>> mapFst (+ 1)
+    >>> uncurry setPCReg
 
 brk _ state = do
     let pc = pcReg state
@@ -199,7 +221,10 @@ brk _ state = do
     let state = setIRQFlag True $ transfer flagReg pushByte state
     transfer (loadWord breakVector) setPCReg state
 
-rti _ = uncurry setPCReg . popWord . uncurry setFlagReg . popByte -- NOTE: unlike rts, no +1
+rti _ = popByte
+    >>> uncurry setFlagReg
+    >>> popWord
+    >>> uncurry setPCReg -- NOTE: unlike rts, no +1
 
 pha _ = transfer aReg pushByte
 pla _ = uncurry setAReg . popByte
@@ -213,174 +238,177 @@ breakVector = 0xfffe :: Word16
 
 reset = transfer (loadWord resetVector) setPCReg
 
-nmi = transfer (loadWord nmiVector) setPCReg . transfer flagReg pushByte . transfer pcReg pushWord
+nmi = transfer pcReg pushWord
+  >>> transfer flagReg pushByte
+  >>> transfer (loadWord nmiVector) setPCReg
 
-irqTransfer = transfer (loadWord breakVector) setPCReg . transfer flagReg pushByte . transfer pcReg pushWord
+irqTransfer = transfer pcReg pushWord
+          >>> transfer flagReg pushByte
+          >>> transfer (loadWord breakVector) setPCReg
 
-irq state =
-    if irqFlag state
-        then state
-        else irqTransfer state
-
--- TODO: maybe combine step+eval and have a cycle counter on MachineState, have decode return cycle count
+irq state = if irqFlag state
+                then state
+                else irqTransfer state
 
 step :: MachineState -> MachineState
 step = uncurry eval . loadByteIncPc
 
 eval :: Word8 -> MachineState -> MachineState
-eval opCode = uncurry op . builder
-    where (op, builder) = decode opCode
+eval opCode = builder
+          >>> uncurry op
+          >>> addCycles cycles
+    where (op, builder, cycles) = decode opCode
 
-decode :: Word8 -> (Operation, AddresserBuilder)
-decode 0xa1 = (lda, iixMode)
-decode 0xa5 = (lda, zpgMode)
-decode 0xa9 = (lda, imdMode)
-decode 0xad = (lda, absMode)
-decode 0xb1 = (lda, iiyMode)
-decode 0xb5 = (lda, zpxMode)
-decode 0xb9 = (lda, abyMode)
-decode 0xbd = (lda, abxMode)
-decode 0xa2 = (ldx, imdMode)
-decode 0xa6 = (ldx, zpgMode)
-decode 0xb6 = (ldx, zpyMode)
-decode 0xae = (ldx, absMode)
-decode 0xbe = (ldx, abyMode)
-decode 0xa0 = (ldy, imdMode)
-decode 0xa4 = (ldy, zpgMode)
-decode 0xb4 = (ldy, zpxMode)
-decode 0xac = (ldy, absMode)
-decode 0xbc = (ldy, abxMode)
-decode 0x85 = (sta, zpgMode)
-decode 0x95 = (sta, zpxMode)
-decode 0x8d = (sta, absMode)
-decode 0x9d = (sta, abxMode)
-decode 0x99 = (sta, abyMode)
-decode 0x81 = (sta, iixMode)
-decode 0x91 = (sta, iiyMode)
-decode 0x86 = (stx, zpgMode)
-decode 0x96 = (stx, zpyMode)
-decode 0x8e = (stx, absMode)
-decode 0x84 = (sty, zpgMode)
-decode 0x94 = (sty, zpxMode)
-decode 0x8c = (sty, absMode)
-decode 0x69 = (adc, imdMode)
-decode 0x65 = (adc, zpgMode)
-decode 0x75 = (adc, zpxMode)
-decode 0x6d = (adc, absMode)
-decode 0x7d = (adc, abxMode)
-decode 0x79 = (adc, abyMode)
-decode 0x61 = (adc, iixMode)
-decode 0x71 = (adc, iiyMode)
-decode 0xe9 = (sbc, imdMode)
-decode 0xe5 = (sbc, zpgMode)
-decode 0xf5 = (sbc, zpxMode)
-decode 0xed = (sbc, absMode)
-decode 0xfd = (sbc, abxMode)
-decode 0xf9 = (sbc, abyMode)
-decode 0xe1 = (sbc, iixMode)
-decode 0xf1 = (sbc, iiyMode)
-decode 0xc9 = (cmp, imdMode)
-decode 0xc5 = (cmp, zpgMode)
-decode 0xd5 = (cmp, zpxMode)
-decode 0xcd = (cmp, absMode)
-decode 0xdd = (cmp, abxMode)
-decode 0xd9 = (cmp, abyMode)
-decode 0xc1 = (cmp, iixMode)
-decode 0xd1 = (cmp, iiyMode)
-decode 0xe0 = (cpx, imdMode)
-decode 0xe4 = (cpx, zpgMode)
-decode 0xec = (cpx, absMode)
-decode 0xc0 = (cpy, imdMode)
-decode 0xc4 = (cpy, zpgMode)
-decode 0xcc = (cpy, absMode)
-decode 0x29 = (add, imdMode)
-decode 0x25 = (add, zpgMode)
-decode 0x35 = (add, zpxMode)
-decode 0x2d = (add, absMode)
-decode 0x3d = (add, abxMode)
-decode 0x39 = (add, abyMode)
-decode 0x21 = (add, iixMode)
-decode 0x31 = (add, iiyMode)
-decode 0x09 = (ora, imdMode)
-decode 0x05 = (ora, zpgMode)
-decode 0x15 = (ora, zpxMode)
-decode 0x0d = (ora, absMode)
-decode 0x1d = (ora, abxMode)
-decode 0x19 = (ora, abyMode)
-decode 0x01 = (ora, iixMode)
-decode 0x11 = (ora, iiyMode)
-decode 0x49 = (eor, imdMode)
-decode 0x45 = (eor, zpgMode)
-decode 0x55 = (eor, zpxMode)
-decode 0x4d = (eor, absMode)
-decode 0x5d = (eor, abxMode)
-decode 0x59 = (eor, abyMode)
-decode 0x41 = (eor, iixMode)
-decode 0x51 = (eor, iiyMode)
-decode 0x24 = (bit, zpgMode)
-decode 0x2c = (bit, absMode)
-decode 0x2a = (rol, accMode)
-decode 0x26 = (rol, zpgMode)
-decode 0x36 = (rol, zpxMode)
-decode 0x2e = (rol, absMode)
-decode 0x3e = (rol, abxMode)
-decode 0x6a = (ror, accMode)
-decode 0x66 = (ror, zpgMode)
-decode 0x76 = (ror, zpxMode)
-decode 0x6e = (ror, absMode)
-decode 0x7e = (ror, abxMode)
-decode 0x0a = (asl, accMode)
-decode 0x06 = (asl, zpgMode)
-decode 0x16 = (asl, zpxMode)
-decode 0x0e = (asl, absMode)
-decode 0x1e = (asl, abxMode)
-decode 0x4a = (lsr, accMode)
-decode 0x46 = (lsr, zpgMode)
-decode 0x56 = (lsr, zpxMode)
-decode 0x4e = (lsr, absMode)
-decode 0x5e = (lsr, abxMode)
-decode 0xe6 = (inc, zpgMode)
-decode 0xf6 = (inc, zpxMode)
-decode 0xee = (inc, absMode)
-decode 0xfe = (inc, abxMode)
-decode 0xc6 = (dec, zpgMode)
-decode 0xd6 = (dec, zpxMode)
-decode 0xce = (dec, absMode)
-decode 0xde = (dec, abxMode)
-decode 0xe8 = (inx, impMode)
-decode 0xca = (dex, impMode)
-decode 0xc8 = (iny, impMode)
-decode 0x88 = (dey, impMode)
-decode 0xaa = (tax, impMode)
-decode 0xa8 = (tay, impMode)
-decode 0x8a = (txa, impMode)
-decode 0x98 = (tya, impMode)
-decode 0x9a = (txs, impMode)
-decode 0xba = (tsx, impMode)
-decode 0x18 = (clc, impMode)
-decode 0x38 = (sec, impMode)
-decode 0x58 = (cli, impMode)
-decode 0x78 = (sei, impMode)
-decode 0xb8 = (clv, impMode)
-decode 0xd8 = (cld, impMode)
-decode 0xf8 = (sed, impMode)
-decode 0x10 = (bpl, impMode)
-decode 0x30 = (bmi, impMode)
-decode 0x50 = (bvc, impMode)
-decode 0x70 = (bvs, impMode)
-decode 0x90 = (bcc, impMode)
-decode 0xb0 = (bcs, impMode)
-decode 0xd0 = (bne, impMode)
-decode 0xf0 = (beq, impMode)
-decode 0x4c = (jmp, impMode)
-decode 0x6c = (jpi, impMode)
-decode 0x20 = (jsr, impMode)
-decode 0x60 = (rts, impMode)
-decode 0x00 = (brk, impMode)
-decode 0x40 = (rti, impMode)
-decode 0x48 = (pha, impMode)
-decode 0x68 = (pla, impMode)
-decode 0x08 = (php, impMode)
-decode 0x28 = (plp, impMode)
-decode 0xea = (nop, impMode)
+decode :: Word8 -> (Operation, AddresserBuilder, Int)
+decode 0xa9 = (lda, imdMode, 2)
+decode 0xa5 = (lda, zpgMode, 3)
+decode 0xb5 = (lda, zpxMode, 4)
+decode 0xad = (lda, absMode, 4)
+decode 0xbd = (lda, abxMode, 4) -- +1 if page crossed
+decode 0xb9 = (lda, abyMode, 4) -- +1 if page crossed
+decode 0xa1 = (lda, iixMode, 6)
+decode 0xb1 = (lda, iiyMode, 5) -- +1 if page crossed
+decode 0xa2 = (ldx, imdMode, 2)
+decode 0xa6 = (ldx, zpgMode, 3)
+decode 0xb6 = (ldx, zpyMode, 4)
+decode 0xae = (ldx, absMode, 4)
+decode 0xbe = (ldx, abyMode, 4) -- +1 if page crossed
+decode 0xa0 = (ldy, imdMode, 2)
+decode 0xa4 = (ldy, zpgMode, 3)
+decode 0xb4 = (ldy, zpxMode, 4)
+decode 0xac = (ldy, absMode, 4)
+decode 0xbc = (ldy, abxMode, 4) -- +1 if page crossed
+decode 0x85 = (sta, zpgMode, 3)
+decode 0x95 = (sta, zpxMode, 4)
+decode 0x8d = (sta, absMode, 4)
+decode 0x9d = (sta, abxMode, 5)
+decode 0x99 = (sta, abyMode, 5)
+decode 0x81 = (sta, iixMode, 6)
+decode 0x91 = (sta, iiyMode, 6)
+decode 0x86 = (stx, zpgMode, 3)
+decode 0x96 = (stx, zpyMode, 4)
+decode 0x8e = (stx, absMode, 4)
+decode 0x84 = (sty, zpgMode, 3)
+decode 0x94 = (sty, zpxMode, 4)
+decode 0x8c = (sty, absMode, 4)
+decode 0x69 = (adc, imdMode, 2)
+decode 0x65 = (adc, zpgMode, 3)
+decode 0x75 = (adc, zpxMode, 4)
+decode 0x6d = (adc, absMode, 4)
+decode 0x7d = (adc, abxMode, 4) -- +1 if page crossed
+decode 0x79 = (adc, abyMode, 4) -- +1 if page crossed
+decode 0x61 = (adc, iixMode, 6)
+decode 0x71 = (adc, iiyMode, 5) -- +1 if page crossed
+decode 0xe9 = (sbc, imdMode, 2)
+decode 0xe5 = (sbc, zpgMode, 3)
+decode 0xf5 = (sbc, zpxMode, 4)
+decode 0xed = (sbc, absMode, 4)
+decode 0xfd = (sbc, abxMode, 4) -- +1 if page crossed
+decode 0xf9 = (sbc, abyMode, 4) -- +1 if page crossed
+decode 0xe1 = (sbc, iixMode, 6)
+decode 0xf1 = (sbc, iiyMode, 5) -- +1 if page crossed
+decode 0xc9 = (cmp, imdMode, 2)
+decode 0xc5 = (cmp, zpgMode, 3)
+decode 0xd5 = (cmp, zpxMode, 4)
+decode 0xcd = (cmp, absMode, 4)
+decode 0xdd = (cmp, abxMode, 4) -- +1 if page crossed
+decode 0xd9 = (cmp, abyMode, 4) -- +1 if page crossed
+decode 0xc1 = (cmp, iixMode, 6)
+decode 0xd1 = (cmp, iiyMode, 5) -- +1 if page crossed
+decode 0xe0 = (cpx, imdMode, 2)
+decode 0xe4 = (cpx, zpgMode, 3)
+decode 0xec = (cpx, absMode, 4)
+decode 0xc0 = (cpy, imdMode, 2)
+decode 0xc4 = (cpy, zpgMode, 3)
+decode 0xcc = (cpy, absMode, 4)
+decode 0x29 = (add, imdMode, 2)
+decode 0x25 = (add, zpgMode, 3)
+decode 0x35 = (add, zpxMode, 4)
+decode 0x2d = (add, absMode, 4)
+decode 0x3d = (add, abxMode, 4) -- +1 if page crossed
+decode 0x39 = (add, abyMode, 4) -- +1 if page crossed
+decode 0x21 = (add, iixMode, 6)
+decode 0x31 = (add, iiyMode, 5) -- +1 if page crossed
+decode 0x09 = (ora, imdMode, 2)
+decode 0x05 = (ora, zpgMode, 3)
+decode 0x15 = (ora, zpxMode, 4)
+decode 0x0d = (ora, absMode, 4)
+decode 0x1d = (ora, abxMode, 4) -- +1 if page crossed
+decode 0x19 = (ora, abyMode, 4) -- +1 if page crossed
+decode 0x01 = (ora, iixMode, 6)
+decode 0x11 = (ora, iiyMode, 5) -- +1 if page crossed
+decode 0x49 = (eor, imdMode, 2)
+decode 0x45 = (eor, zpgMode, 3)
+decode 0x55 = (eor, zpxMode, 4)
+decode 0x4d = (eor, absMode, 4)
+decode 0x5d = (eor, abxMode, 4) -- +1 if page crossed
+decode 0x59 = (eor, abyMode, 4) -- +1 if page crossed
+decode 0x41 = (eor, iixMode, 6)
+decode 0x51 = (eor, iiyMode, 5) -- +1 if page crossed
+decode 0x24 = (bit, zpgMode, 3)
+decode 0x2c = (bit, absMode, 4)
+decode 0x2a = (rol, accMode, 2)
+decode 0x26 = (rol, zpgMode, 5)
+decode 0x36 = (rol, zpxMode, 6)
+decode 0x2e = (rol, absMode, 6)
+decode 0x3e = (rol, abxMode, 7)
+decode 0x6a = (ror, accMode, 2)
+decode 0x66 = (ror, zpgMode, 5)
+decode 0x76 = (ror, zpxMode, 6)
+decode 0x6e = (ror, absMode, 6)
+decode 0x7e = (ror, abxMode, 7)
+decode 0x0a = (asl, accMode, 2)
+decode 0x06 = (asl, zpgMode, 5)
+decode 0x16 = (asl, zpxMode, 6)
+decode 0x0e = (asl, absMode, 6)
+decode 0x1e = (asl, abxMode, 7)
+decode 0x4a = (lsr, accMode, 2)
+decode 0x46 = (lsr, zpgMode, 5)
+decode 0x56 = (lsr, zpxMode, 6)
+decode 0x4e = (lsr, absMode, 6)
+decode 0x5e = (lsr, abxMode, 7)
+decode 0xe6 = (inc, zpgMode, 5)
+decode 0xf6 = (inc, zpxMode, 6)
+decode 0xee = (inc, absMode, 6)
+decode 0xfe = (inc, abxMode, 7)
+decode 0xc6 = (dec, zpgMode, 5)
+decode 0xd6 = (dec, zpxMode, 6)
+decode 0xce = (dec, absMode, 6)
+decode 0xde = (dec, abxMode, 7)
+decode 0xe8 = (inx, impMode, 2)
+decode 0xca = (dex, impMode, 2)
+decode 0xc8 = (iny, impMode, 2)
+decode 0x88 = (dey, impMode, 2)
+decode 0xaa = (tax, impMode, 2)
+decode 0xa8 = (tay, impMode, 2)
+decode 0x8a = (txa, impMode, 2)
+decode 0x98 = (tya, impMode, 2)
+decode 0x9a = (txs, impMode, 2)
+decode 0xba = (tsx, impMode, 2)
+decode 0x18 = (clc, impMode, 2)
+decode 0x38 = (sec, impMode, 2)
+decode 0x58 = (cli, impMode, 2)
+decode 0x78 = (sei, impMode, 2)
+decode 0xb8 = (clv, impMode, 2)
+decode 0xd8 = (cld, impMode, 2)
+decode 0xf8 = (sed, impMode, 2)
+decode 0x10 = (bpl, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0x30 = (bmi, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0x50 = (bvc, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0x70 = (bvs, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0x90 = (bcc, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0xb0 = (bcs, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0xd0 = (bne, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0xf0 = (beq, impMode, 2) -- +1 if branch succeeds, +2 if page crossed
+decode 0x4c = (jmp, impMode, 3)
+decode 0x6c = (jpi, impMode, 5)
+decode 0x20 = (jsr, impMode, 6)
+decode 0x60 = (rts, impMode, 6)
+decode 0x00 = (brk, impMode, 7)
+decode 0x40 = (rti, impMode, 6)
+decode 0x48 = (pha, impMode, 3)
+decode 0x68 = (pla, impMode, 4)
+decode 0x08 = (php, impMode, 3)
+decode 0x28 = (plp, impMode, 4)
+decode 0xea = (nop, impMode, 2)
 decode opCode = error $ "Invalid op code: " ++ show opCode
