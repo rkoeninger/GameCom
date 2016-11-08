@@ -1,8 +1,8 @@
 module CPU where
 
+import Control.Arrow ((>>>))
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement, testBit)
 import Data.Word (Word8, Word16)
-import Control.Arrow ((>>>))
 import Memory
 
 mapFst f (x, y) = (f x, y)
@@ -13,17 +13,18 @@ loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
 loadWordIncPc :: MachineState -> (Word16, MachineState)
 loadWordIncPc state = (transfer pcReg loadWord state, modifyPCReg (+ 2) state)
 
+loadWordZeroPage :: Word16 -> MachineState -> Word16
+loadWordZeroPage addr state = byteToWord (loadByte addr state) .|. byteToWord ((loadByte (addr + 1)) state) `shiftL` 8
+
 pushByte :: Word8 -> MachineState -> MachineState
 pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + byteToWord (sReg state)) val state
 
--- FIXME: Is this correct? FCEU has two self.storeb()s here. Might have different semantics...
 pushWord :: Word16 -> MachineState -> MachineState
 pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + byteToWord (sReg state - 1)) val state
 
 popByte :: MachineState -> (Word8, MachineState)
 popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 1) state)
 
--- FIXME: see two functions up
 popWord :: MachineState -> (Word16, MachineState)
 popWord state = (loadWord (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 2) state)
 
@@ -46,7 +47,7 @@ accMode state = ((loader, storer), state)
 imdMode :: AddresserBuilder
 imdMode state = ((loader, storer), newState)
     where (val, newState) = loadByteIncPc state
-          loader = const val
+          loader _ = val
           storer _ _ = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
@@ -88,14 +89,13 @@ iixMode :: AddresserBuilder
 iixMode state = mapFst mode (loadByteIncPc state)
     where mode = byteToWord
              >>> (+ (byteToWord $ xReg state))
-             >>> flip loadWord state
+             >>> flip loadWordZeroPage state
              >>> memoryMode
 
--- FIXME: this needs some alternate behavior for zero page mem.rs:35
 iiyMode :: AddresserBuilder
 iiyMode state = mapFst mode (loadByteIncPc state)
     where mode = byteToWord
-             >>> flip loadWord state
+             >>> flip loadWordZeroPage state
              >>> (+ (byteToWord $ yReg state))
              >>> memoryMode
 
@@ -179,7 +179,7 @@ sec _ = setCarryFlag    True
 cli _ = setIRQFlag      False
 sei _ = setIRQFlag      True
 clv _ = setOverflowFlag False
-cld _ = setDecimalFlag  False -- TODO: decimal flag isn't used since BCD commands are disabled
+cld _ = setDecimalFlag  False -- NOTE: decimal flag isn't used since BCD commands are disabled
 sed _ = setDecimalFlag  True
 
 branch :: (MachineState -> Bool) -> Operation
@@ -188,22 +188,23 @@ branch condf _ state =
         then uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
         else state
 
-bpl = branch $ negativeFlag >>> not
-bvc = branch $ overflowFlag >>> not
-bcc = branch $ carryFlag >>> not
-bne = branch $ zeroFlag >>> not
+bpl = branch $ not . negativeFlag
+bvc = branch $ not . overflowFlag
+bcc = branch $ not . carryFlag
+bne = branch $ not . zeroFlag
 bmi = branch negativeFlag
 bvs = branch overflowFlag
 bcs = branch carryFlag
 beq = branch zeroFlag
 
-jmp _ = uncurry setPCReg . loadWordIncPc
+jmp _ = loadWordIncPc
+    >>> uncurry setPCReg
 
 -- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
 jpi _ state = do
     let (addr, state) = loadWordIncPc state
     let lo = byteToWord $ loadByte addr state
-    let hi = byteToWord $ loadByte ((addr .&. 0xff00) .|. ((addr + 1) .&. 0x00ff)) state
+    let hi = byteToWord $ loadByte (addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff) state
     setPCReg ((hi `shiftL` 8) .|. lo) state
 
 jsr _ state = do
@@ -214,22 +215,26 @@ rts _ = popWord
     >>> mapFst (+ 1)
     >>> uncurry setPCReg
 
-brk _ state = do
-    let pc = pcReg state
-    let state = pushWord (pc + 1) state
-    -- FIXME: FCEU sets BREAK_FLAG and U_FLAG here, why?
-    let state = setIRQFlag True $ transfer flagReg pushByte state
-    transfer (loadWord breakVector) setPCReg state
+brk _ = transfer ((+ 1) . pcReg) pushWord
+    >>> transfer ((.|. breakMask) . flagReg) pushByte
+    >>> setIRQFlag True
+    >>> transfer (loadWord breakVector) setPCReg
 
 rti _ = popByte
     >>> uncurry setFlagReg
     >>> popWord
-    >>> uncurry setPCReg -- NOTE: unlike rts, no +1
+    >>> uncurry setPCReg
 
 pha _ = transfer aReg pushByte
-pla _ = uncurry setAReg . popByte
+
+pla _ = popByte
+    >>> uncurry setAReg
+
 php _ = transfer ((.|. breakMask) . flagReg) pushByte
-plp _ = uncurry setFlagReg . popByte
+
+plp _ = popByte
+    >>> uncurry setFlagReg
+
 nop _ = id
 
 nmiVector   = 0xfffa :: Word16
@@ -242,13 +247,14 @@ nmi = transfer pcReg pushWord
   >>> transfer flagReg pushByte
   >>> transfer (loadWord nmiVector) setPCReg
 
-irqTransfer = transfer pcReg pushWord
-          >>> transfer flagReg pushByte
-          >>> transfer (loadWord breakVector) setPCReg
+irt = transfer pcReg pushWord
+  >>> transfer flagReg pushByte
+  >>> transfer (loadWord breakVector) setPCReg
 
-irq state = if irqFlag state
-                then state
-                else irqTransfer state
+irq state =
+    if irqFlag state
+        then state
+        else irt state
 
 step :: MachineState -> MachineState
 step = uncurry eval . loadByteIncPc

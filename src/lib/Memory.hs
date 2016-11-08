@@ -1,8 +1,9 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Memory where
 
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit, setBit)
+import Data.Default (Default(..))
 import Data.Vector.Persistent (Vector, update, index, fromList)
 import qualified Data.Vector.Persistent as P
 import Data.Word (Word8, Word16)
@@ -31,12 +32,10 @@ class Storage m where
         where b0 = wordToByte $ word .&. 0xff
               b1 = wordToByte $ word `shiftR` 8
 
-type RAM = Vector Word8
+vector :: Default d => Int -> Vector d
+vector n = fromList (replicate n def)
 
-malloc :: Int -> RAM
-malloc n = fromList (replicate n 0)
-
-instance Storage RAM where
+instance Storage (Vector Word8) where
     loadByte addr ram =
         case index ram (fromIntegral addr) of
         Just value -> value
@@ -61,9 +60,14 @@ data NametableAddress = NametableAddress {
     base :: Word16
 }
 
+type Color = (Word8, Word8, Word8)
+type SpriteColor = (SpritePriority, Color)
+data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
+type Screen = Vector Color
+
 data MachineState = MachineState {
     cycleCount   :: Int,
-    ram          :: RAM,
+    ram          :: Vector Word8,
     aReg         :: Word8,
     xReg         :: Word8,
     yReg         :: Word8,
@@ -74,19 +78,20 @@ data MachineState = MachineState {
     maskReg      :: Word8,
     statusReg    :: Word8,
     oamAddr      :: Word8,
-    oamData      :: RAM,
+    oamData      :: Vector Word8,
     ppuAddr      :: Word16,
     ppuAddrHi    :: Bool,
     ppuScrollX   :: Word8,
     ppuScrollY   :: Word8,
     ppuScrollDir :: ScrollDirection,
-    nametables   :: RAM,
-    palette      :: RAM
+    nametables   :: Vector Word8,
+    palette      :: Vector Word8,
+    screen       :: Vector Color
 }
 
 defaultState = MachineState {
     cycleCount   = 0,
-    ram          = malloc 2048,
+    ram          = vector 2048,
     aReg         = 0x00,
     xReg         = 0x00,
     yReg         = 0x00,
@@ -97,14 +102,15 @@ defaultState = MachineState {
     maskReg      = 0x00,
     statusReg    = 0x00,
     oamAddr      = 0x00,
-    oamData      = malloc 256,
+    oamData      = vector 256,
     ppuAddr      = 0x0000,
     ppuAddrHi    = True,
     ppuScrollX   = 0x00,
     ppuScrollY   = 0x00,
     ppuScrollDir = XDirection,
-    nametables   = malloc 2048,
-    palette      = malloc 32
+    nametables   = vector 2048,
+    palette      = vector 32,
+    screen       = vector (256 * 240)
 }
 
 addCycles cycles state = state { cycleCount = (cycleCount state) + cycles }
@@ -174,14 +180,8 @@ modifySReg      f = transfer (f . sReg) setSReg
 modifyPCReg     f = transfer (f . pcReg) setPCReg
 modifyStatusReg f = transfer (f . statusReg) setStatusReg
 
-screenWidth       = 256
-screenHeight      = 240
-cyclesPerScanline = 114
-vBlankScanline    = 241
-lastScanline      = 261
-
-xScrollOffset              state = if testBit (controlReg state) 0 then screenWidth else 0x0000 :: Word16
-yScrollOffset              state = if testBit (controlReg state) 1 then screenHeight else 0x0000 :: Word16
+xScrollOffset              state =    testBit (controlReg state) 0
+yScrollOffset              state =    testBit (controlReg state) 1
 vramAddrIncrement          state = if testBit (controlReg state) 2 then 0x0020 else 0x0001 :: Word16
 spritePatternTableAddr     state = if testBit (controlReg state) 3 then 0x1000 else 0x0000 :: Word16
 backgroundPatternTableAddr state = if testBit (controlReg state) 4 then 0x1000 else 0x0000 :: Word16

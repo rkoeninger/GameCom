@@ -3,12 +3,13 @@ module PPU where
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit)
 import Data.Word (Word8, Word16)
 import Data.Vector.Persistent (Vector, index, update)
-import Memory hiding (setFlag)
+import Memory
 
-type RGB = (Word8, Word8, Word8)
-type SpriteColor = (SpritePriority, RGB)
-data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
-type Screen = Vector RGB
+screenWidth       = 256
+screenHeight      = 240
+cyclesPerScanline = 114
+vBlankScanline    = 241
+lastScanline      = 261
 
 palette = [
     (0x7c, 0x7c, 0x7c), (0x00, 0x00, 0xfc), (0x00, 0x00, 0xbc), (0x44, 0x28, 0xbc),
@@ -28,12 +29,12 @@ palette = [
     (0xf8, 0xd8, 0x78), (0xd8, 0xf8, 0x78), (0xb8, 0xf8, 0xb8), (0xb8, 0xf8, 0xd8),
     (0x00, 0xfc, 0xfc), (0xf8, 0xd8, 0xf8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00)]
 
-getPixel :: (Int, Int) -> Screen -> RGB
+getPixel :: (Int, Int) -> Screen -> Color
 getPixel (x, y) screen = case index screen (x + y * 256) of
     Just color -> color
     _ -> error $ "Co-ordinates not on screen: " ++ show x ++ ", " ++ show y
 
-putPixel :: (Int, Int) -> RGB -> Screen -> Screen
+putPixel :: (Int, Int) -> Color -> Screen -> Screen
 putPixel (x, y) = update (x + y * 256)
 
 spriteHeight :: MachineState -> Word8
@@ -65,3 +66,15 @@ tiles sprite state =
 priority sprite    = if testBit sprite 5 then BelowBackground else AboveBackground
 flipHorizontal sprite = testBit sprite 6
 flipVertical sprite   = testBit sprite 7
+
+renderScanline :: MachineState -> MachineState
+renderScanline = id
+
+nextScanline :: Int -> MachineState -> MachineState
+nextScanline runToCycle state =
+    if runToCycle >= cycleCount state
+        then state
+        else nextScanline (runToCycle - 1) (renderScanline state)
+
+step :: MachineState -> MachineState
+step state = nextScanline (cyclesPerScanline + cycleCount state) state

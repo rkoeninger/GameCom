@@ -1,6 +1,7 @@
 module APU where
 
 import Data.Word (Word8, Word16)
+import Memory
 
 cyclesPerEvenTick = 7438;
 cyclesPerOddTick = 7439;
@@ -26,3 +27,10 @@ triangleWaveform = [
 noisePeriods :: [Word16]
 noisePeriods = [
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
+
+
+
+
+
+step :: MachineState -> MachineState
+step = id

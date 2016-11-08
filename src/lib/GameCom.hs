@@ -8,3 +8,6 @@ import ROM
 
 demo :: IO ()
 demo = putStrLn "Nothing here right now"
+
+step :: MachineState -> MachineState
+step = id
