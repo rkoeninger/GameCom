@@ -13,14 +13,16 @@ x |> f = f x
 
 infixl 1 |>
 
-negativeFlagSet   state = negativeFlag state `shouldBe` True
-negativeFlagClear state = negativeFlag state `shouldBe` False
-overflowFlagSet   state = overflowFlag state `shouldBe` True
-overflowFlagClear state = overflowFlag state `shouldBe` False
-zeroFlagSet       state = zeroFlag     state `shouldBe` True
-zeroFlagClear     state = zeroFlag     state `shouldBe` False
-carryFlagSet      state = carryFlag    state `shouldBe` True
-carryFlagClear    state = carryFlag    state `shouldBe` False
+aRegShouldBe state val = it "accumulator should be" $ aReg state `shouldBe` val
+
+negativeFlagSet   state = it "negative flag should be set"   $ negativeFlag state `shouldBe` True
+negativeFlagClear state = it "negative flag should be clear" $ negativeFlag state `shouldBe` False
+overflowFlagSet   state = it "overflow flag should be set"   $ overflowFlag state `shouldBe` True
+overflowFlagClear state = it "overflow flag should be clear" $ overflowFlag state `shouldBe` False
+zeroFlagSet       state = it "zero flag should be set"       $ zeroFlag     state `shouldBe` True
+zeroFlagClear     state = it "zero flag should be clear"     $ zeroFlag     state `shouldBe` False
+carryFlagSet      state = it "carry flag should be set"      $ carryFlag    state `shouldBe` True
+carryFlagClear    state = it "carry flag should be clear"    $ carryFlag    state `shouldBe` False
 
 main :: IO ()
 main = hspec $ do
@@ -35,17 +37,17 @@ main = hspec $ do
             loadWord 0 state `shouldBe` 0x8cf3
 
     describe "CPU" $ do
-        it "negative numbers should set the negative flag in the status register" $ do
+        context "negative numbers should set the negative flag in the status register" $ do
             let state = setZN 0x80 defaultState
             negativeFlagSet state
             zeroFlagClear state
 
-        it "zero should set the zero flag in the status register" $ do
+        context "zero should set the zero flag in the status register" $ do
             let state = setZN 0x00 defaultState
             negativeFlagClear state
             zeroFlagSet state
 
-        it "positive numbers should not set the zero or negative flags in the status register" $ do
+        context "positive numbers should not set the zero or negative flags in the status register" $ do
             let state = setZN 0x01 defaultState
             negativeFlagClear state
             zeroFlagClear state
@@ -69,7 +71,7 @@ main = hspec $ do
             parseROM (B.pack bytes) `shouldBe` Right rom
 
     describe "Arithmetic" $ do
-        it "should perform simple, non-carried, non-overflow, addition" $ do
+        context "should perform simple, non-carried, non-overflow, addition" $ do
             let state = defaultState
                         |> setAReg 21 -- argument
                         |> storeByte 0x00 33 -- other argument
@@ -77,13 +79,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 54
+            aRegShouldBe state 54
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagClear state
             carryFlagClear state
 
-        it "should perform simple, previous carry, non-overflow, addition" $ do
+        context "should perform simple, previous carry, non-overflow, addition" $ do
             let state = defaultState
                         |> setAReg 21 -- argument
                         |> setCarryFlag True
@@ -92,13 +94,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 55
+            aRegShouldBe state 55
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagClear state
             carryFlagClear state
 
-        it "should perform simple, non-carried, overflowing, addition resulting in carry" $ do
+        context "should perform simple, non-carried, overflowing, addition resulting in carry" $ do
             let state = defaultState
                         |> setAReg 150 -- argument
                         |> storeByte 0x00 150 -- other argument
@@ -106,13 +108,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 44
+            aRegShouldBe state 44
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagSet state
             carryFlagSet state
 
-        it "should perform simple, previous carry, overflowing, addition resulting in carry" $ do
+        context "should perform simple, previous carry, overflowing, addition resulting in carry" $ do
             let state = defaultState
                         |> setAReg 150 -- argument
                         |> setCarryFlag True
@@ -121,13 +123,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of adc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 45
+            aRegShouldBe state 45
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagSet state
             carryFlagSet state
 
-        it "should perform simple, non-carried, non-overflow, subtraction" $ do
+        context "should perform simple, non-carried, non-overflow, subtraction" $ do
             let state = defaultState
                         |> setAReg 49 -- argument
                         |> storeByte 0x00 31 -- other argument
@@ -135,13 +137,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of sbc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 17
+            aRegShouldBe state 17
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagSet state
             carryFlagSet state
 
-        it "should perform simple, previous carry, non-overflow, subtraction" $ do
+        context "should perform simple, previous carry, non-overflow, subtraction" $ do
             let state = defaultState
                         |> setAReg 49 -- argument
                         |> setCarryFlag True
@@ -150,13 +152,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of sbc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 18
+            aRegShouldBe state 18
             zeroFlagClear state
             negativeFlagClear state
             overflowFlagSet state
             carryFlagSet state
 
-        it "should perform simple, non-carried, overflowing, subtraction resulting in a carry" $ do
+        context "should perform simple, non-carried, overflowing, subtraction resulting in a carry" $ do
             let state = defaultState
                         |> setAReg 49 -- argument
                         |> storeByte 0x00 81 -- other argument
@@ -164,13 +166,13 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of sbc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 223
+            aRegShouldBe state 223
             zeroFlagClear state
             negativeFlagSet state
             overflowFlagClear state
             carryFlagClear state
 
-        it "should perform simple, previous carry, overflowing, subtraction resulting in a carry" $ do
+        context "should perform simple, previous carry, overflowing, subtraction resulting in a carry" $ do
             let state = defaultState
                         |> setAReg 49 -- argument
                         |> setCarryFlag True
@@ -179,7 +181,7 @@ main = hspec $ do
                         |> storeByte 0x11 0x00 -- zpg address
                         |> setPCReg 0x0010 -- set PC to location of sbc/zpg
                         |> CPU.step
-            aReg state `shouldBe` 224
+            aRegShouldBe state 224
             zeroFlagClear state
             negativeFlagSet state
             overflowFlagClear state
