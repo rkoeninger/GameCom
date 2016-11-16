@@ -1,13 +1,11 @@
-module GameCom (demo) where
+module GameCom where
 
+import Control.Arrow ((>>>))
 import Memory
-import CPU
-import PPU
-import APU
 import ROM
-
-demo :: IO ()
-demo = putStrLn "Nothing here right now"
+import qualified CPU
+import qualified PPU
+import qualified APU
 
 step :: MachineState -> MachineState
-step = id
+step = CPU.step >>> PPU.step >>> APU.step

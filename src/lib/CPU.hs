@@ -106,16 +106,23 @@ sta (_, storer) = transfer aReg storer
 stx (_, storer) = transfer xReg storer
 sty (_, storer) = transfer yReg storer
 
-addWithCarry val state = do
+adc (loader, _) state = do
     let a = aReg state
-    let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 0x0001 else 0x0000)
+    let val = loader state
+    let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
     let resultByte = wordToByte resultWord
     let carry = testBit resultWord 8
     let overflow = (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
     setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
-adc (loader, _) = transfer loader addWithCarry
-sbc (loader, _) = transfer (negate . loader) addWithCarry
+sbc (loader, _) state = do
+    let a = aReg state
+    let val = loader state
+    let resultWord = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
+    let resultByte = wordToByte resultWord
+    let carry = not $ testBit resultWord 8
+    let overflow = not $ (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
+    setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
 comp :: (MachineState -> Word8) -> Operation
 comp reg (loader, _) state = do
