@@ -13,7 +13,7 @@ x |> f = f x
 
 infixl 1 |>
 
-aRegIs state val = it "accumulator should be" $ aReg state `shouldBe` val
+aRegIs x state = it ("accumulator should be " ++ show x) $ aReg state `shouldBe` x
 
 negativeFlagIs x state = it ("negative flag should be " ++ show x) $ negativeFlag state `shouldBe` x
 overflowFlagIs x state = it ("overflow flag should be " ++ show x) $ overflowFlag state `shouldBe` x
@@ -64,7 +64,7 @@ arithmeticScenario a val carry f = do
 testArithmetic = describe "Arithmetic" $ do
     context "should perform simple, non-carried, non-overflow, addition" $ do
         let state = arithmeticScenario 21 33 False (+)
-        aRegIs state 54
+        aRegIs 54 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs False state
@@ -72,7 +72,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, previous carry, non-overflow, addition" $ do
         let state = arithmeticScenario 21 33 True (+)
-        aRegIs state 55
+        aRegIs 55 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs False state
@@ -80,7 +80,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, non-carried, overflowing, addition resulting in carry" $ do
         let state = arithmeticScenario 150 150 False (+)
-        aRegIs state 44
+        aRegIs 44 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs True state
@@ -88,7 +88,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, previous carry, overflowing, addition resulting in carry" $ do
         let state = arithmeticScenario 150 150 True (+)
-        aRegIs state 45
+        aRegIs 45 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs True state
@@ -96,7 +96,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, non-carried, non-overflow, subtraction" $ do
         let state = arithmeticScenario 49 31 False (-)
-        aRegIs state 17
+        aRegIs 17 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs False state
@@ -104,7 +104,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, previous carry, non-overflow, subtraction" $ do
         let state = arithmeticScenario 49 31 True (-)
-        aRegIs state 18
+        aRegIs 18 state
         zeroFlagIs False state
         negativeFlagIs False state
         overflowFlagIs False state
@@ -112,7 +112,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, non-carried, overflowing, subtraction resulting in a carry" $ do
         let state = arithmeticScenario 49 81 False (-)
-        aRegIs state 223
+        aRegIs 223 state
         zeroFlagIs False state
         negativeFlagIs True state
         overflowFlagIs False state
@@ -120,7 +120,7 @@ testArithmetic = describe "Arithmetic" $ do
 
     context "should perform simple, previous carry, overflowing, subtraction resulting in a carry" $ do
         let state = arithmeticScenario 49 81 True (-)
-        aRegIs state 224
+        aRegIs 224 state
         zeroFlagIs False state
         negativeFlagIs True state
         overflowFlagIs False state
@@ -168,42 +168,42 @@ rotateScenario a carry lr = do
 testRotate = describe "Rotate" $ do
     context "when carry bit is clear, rotating left should leave right most bit clear" $ do
         let state = rotateScenario 0xff False Left
-        aRegIs state 0xfe
+        aRegIs 0xfe state
         carryFlagIs True state
         zeroFlagIs False state
         negativeFlagIs True state
 
     context "when carry bit is set, rotating left should leave right most bit set" $ do
         let state = rotateScenario 0xff True Left
-        aRegIs state 0xff
+        aRegIs 0xff state
         carryFlagIs True state
         zeroFlagIs False state
         negativeFlagIs True state
 
     context "when carry bit is clear, rotating right should leave left most bit clear" $ do
         let state = rotateScenario 0xff False Right
-        aRegIs state 0x7f
+        aRegIs 0x7f state
         carryFlagIs True state
         zeroFlagIs False state
         negativeFlagIs False state
 
     context "when carry bit is set, rotating right should leave left most bit set" $ do
         let state = rotateScenario 0xff True Right
-        aRegIs state 0xff
+        aRegIs 0xff state
         carryFlagIs True state
         zeroFlagIs False state
         negativeFlagIs True state
 
     context "when left most bit is clear, rotating left should clear carry bit" $ do
         let state = rotateScenario 0x7f False Left
-        aRegIs state 0xfe
+        aRegIs 0xfe state
         carryFlagIs False state
         zeroFlagIs False state
         negativeFlagIs True state
 
     context "when right most bit is clear, rotating right should clear carry bit" $ do
         let state = rotateScenario 0xfe False Right
-        aRegIs state 0x7f
+        aRegIs 0x7f state
         carryFlagIs False state
         zeroFlagIs False state
         negativeFlagIs False state
