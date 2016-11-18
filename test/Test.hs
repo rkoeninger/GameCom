@@ -253,6 +253,28 @@ testRotate = describe "Rotate" $ do
         zeroFlagClear state
         negativeFlagSet state
 
+    context "when left most bit is clear, rotating left should clear carry bit" $ do
+        let state = defaultState
+                    |> setAReg 0x7f -- argument
+                    |> storeByte 0x10 0x2a -- rol/acc
+                    |> setPCReg 0x0010 -- set PC to location of rol/acc
+                    |> CPU.step
+        aRegIs state 0xfe
+        carryFlagClear state
+        zeroFlagClear state
+        negativeFlagSet state
+
+    context "when right most bit is clear, rotating right should clear carry bit" $ do
+        let state = defaultState
+                    |> setAReg 0xfe -- argument
+                    |> storeByte 0x10 0x6a -- ror/acc
+                    |> setPCReg 0x0010 -- set PC to location of ror/acc
+                    |> CPU.step
+        aRegIs state 0x7f
+        carryFlagClear state
+        zeroFlagClear state
+        negativeFlagClear state
+
 main :: IO ()
 main = hspec $ do
     testROM
