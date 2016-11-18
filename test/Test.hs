@@ -208,10 +208,36 @@ testRotate = describe "Rotate" $ do
         zeroFlagIs False state
         negativeFlagIs False state
 
-main :: IO () 
+shiftScenario a carry lr = do
+    let opCode = case lr () of
+                 Left  () -> 0x0a -- asl/acc
+                 Right () -> 0x4a -- lsr/acc
+    defaultState
+        |> setAReg a
+        |> setCarryFlag carry
+        |> storeByte 0x10 opCode
+        |> setPCReg 0x0010
+        |> CPU.step
+
+testShift = describe "Shift" $ do
+    context "when carry bit is clear, shifting left should leave right most bit clear" $ do
+        let state = shiftScenario 0xff False Left
+        aRegIs 0xfe state
+        carryFlagIs True state
+        zeroFlagIs False state
+        negativeFlagIs True state
+
+    context "when carry bit is set, shifting left should leave right most bit clear" $ do
+        let state = shiftScenario 0xff True Left
+        aRegIs 0xfe state
+        carryFlagIs True state
+        zeroFlagIs False state
+        negativeFlagIs True state
+
 main = hspec $ do
     testROM
     testMemory
     testArithmetic
     testComparisons
     testRotate
+    testShift
