@@ -51,7 +51,7 @@ testMemory = describe "Memory" $ do
 arithmeticScenario a val carry f = do
     let opCode = case f 2 1 of
                  3 -> 0x65 -- adc/zpg
-                 1 -> 0xe5 -- abc/zpg
+                 1 -> 0xe5 -- sbc/zpg
     defaultState
         |> setAReg a
         |> setCarryFlag carry
