@@ -52,15 +52,22 @@ testMemory = describe "Memory" $ do
         let state = storeByte 1 0x8c $ storeByte 0 0xf3 defaultState
         loadWord 0 state `shouldBe` 0x8cf3
 
+arithmeticScenario a val carry f = do
+    let opCode = case f 2 1 of
+                 3 -> 0x65 -- adc/zpg
+                 1 -> 0xe5 -- abc/zpg
+    defaultState
+        |> setAReg a
+        |> setCarryFlag carry
+        |> storeByte 0x00 val
+        |> storeByte 0x10 opCode
+        |> storeByte 0x11 0x00
+        |> setPCReg 0x0010
+        |> CPU.step
+
 testArithmetic = describe "Arithmetic" $ do
     context "should perform simple, non-carried, non-overflow, addition" $ do
-        let state = defaultState
-                    |> setAReg 21 -- argument
-                    |> storeByte 0x00 33 -- other argument
-                    |> storeByte 0x10 0x65 -- adc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of adc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 21 33 False (+)
         aRegIs state 54
         zeroFlagClear state
         negativeFlagClear state
@@ -68,14 +75,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagClear state
 
     context "should perform simple, previous carry, non-overflow, addition" $ do
-        let state = defaultState
-                    |> setAReg 21 -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x00 33 -- other argument
-                    |> storeByte 0x10 0x65 -- adc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of adc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 21 33 True (+)
         aRegIs state 55
         zeroFlagClear state
         negativeFlagClear state
@@ -83,13 +83,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagClear state
 
     context "should perform simple, non-carried, overflowing, addition resulting in carry" $ do
-        let state = defaultState
-                    |> setAReg 150 -- argument
-                    |> storeByte 0x00 150 -- other argument
-                    |> storeByte 0x10 0x65 -- adc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of adc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 150 150 False (+)
         aRegIs state 44
         zeroFlagClear state
         negativeFlagClear state
@@ -97,14 +91,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagSet state
 
     context "should perform simple, previous carry, overflowing, addition resulting in carry" $ do
-        let state = defaultState
-                    |> setAReg 150 -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x00 150 -- other argument
-                    |> storeByte 0x10 0x65 -- adc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of adc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 150 150 True (+)
         aRegIs state 45
         zeroFlagClear state
         negativeFlagClear state
@@ -112,13 +99,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagSet state
 
     context "should perform simple, non-carried, non-overflow, subtraction" $ do
-        let state = defaultState
-                    |> setAReg 49 -- argument
-                    |> storeByte 0x00 31 -- other argument
-                    |> storeByte 0x10 0xe5 -- sbc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of sbc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 49 31 False (-)
         aRegIs state 17
         zeroFlagClear state
         negativeFlagClear state
@@ -126,14 +107,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagSet state
 
     context "should perform simple, previous carry, non-overflow, subtraction" $ do
-        let state = defaultState
-                    |> setAReg 49 -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x00 31 -- other argument
-                    |> storeByte 0x10 0xe5 -- sbc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of sbc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 49 31 True (-)
         aRegIs state 18
         zeroFlagClear state
         negativeFlagClear state
@@ -141,13 +115,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagSet state
 
     context "should perform simple, non-carried, overflowing, subtraction resulting in a carry" $ do
-        let state = defaultState
-                    |> setAReg 49 -- argument
-                    |> storeByte 0x00 81 -- other argument
-                    |> storeByte 0x10 0xe5 -- sbc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of sbc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 49 81 False (-)
         aRegIs state 223
         zeroFlagClear state
         negativeFlagSet state
@@ -155,127 +123,96 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagClear state
 
     context "should perform simple, previous carry, overflowing, subtraction resulting in a carry" $ do
-        let state = defaultState
-                    |> setAReg 49 -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x00 81 -- other argument
-                    |> storeByte 0x10 0xe5 -- sbc/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of sbc/zpg
-                    |> CPU.step
+        let state = arithmeticScenario 49 81 True (-)
         aRegIs state 224
         zeroFlagClear state
         negativeFlagSet state
         overflowFlagClear state
         carryFlagClear state
 
+compareScenario a val = do
+    defaultState
+        |> setAReg a
+        |> storeByte 0x00 val
+        |> storeByte 0x10 0xc5 -- cmp/zpg
+        |> storeByte 0x11 0x00
+        |> setPCReg 0x0010
+        |> CPU.step
+
 testComparisons = describe "Comparisons" $ do
     context "first argument is greater than second" $ do
-        let state = defaultState
-                    |> setAReg 1 -- argument
-                    |> storeByte 0x00 0 -- other argument
-                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
-                    |> CPU.step
+        let state = compareScenario 1 0
         zeroFlagClear state
         negativeFlagClear state
         carryFlagClear state
 
     context "first argument is less than second" $ do
-        let state = defaultState
-                    |> setAReg 0 -- argument
-                    |> storeByte 0x00 1 -- other argument
-                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
-                    |> CPU.step
+        let state = compareScenario 0 1
         zeroFlagClear state
         negativeFlagSet state
         carryFlagSet state
 
     context "first argument is equal to second" $ do
-        let state = defaultState
-                    |> setAReg 0 -- argument
-                    |> storeByte 0x00 0 -- other argument
-                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
-                    |> storeByte 0x11 0x00 -- zpg address
-                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
-                    |> CPU.step
+        let state = compareScenario 0 0
         zeroFlagSet state
         negativeFlagClear state
         carryFlagClear state
 
+rotateScenario a carry lr = do
+    let opCode = case lr () of
+                 Left  () -> 0x2a -- rol/acc
+                 Right () -> 0x6a -- ror/acc
+    defaultState
+        |> setAReg a
+        |> setCarryFlag carry
+        |> storeByte 0x10 opCode
+        |> setPCReg 0x0010
+        |> CPU.step
+
 testRotate = describe "Rotate" $ do
     context "when carry bit is clear, rotating left should leave right most bit clear" $ do
-        let state = defaultState
-                    |> setAReg 0xff -- argument
-                    |> storeByte 0x10 0x2a -- rol/acc
-                    |> setPCReg 0x0010 -- set PC to location of rol/acc
-                    |> CPU.step
+        let state = rotateScenario 0xff False Left
         aRegIs state 0xfe
         carryFlagSet state
         zeroFlagClear state
         negativeFlagSet state
 
     context "when carry bit is set, rotating left should leave right most bit set" $ do
-        let state = defaultState
-                    |> setAReg 0xff -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x10 0x2a -- rol/acc
-                    |> setPCReg 0x0010 -- set PC to location of rol/acc
-                    |> CPU.step
+        let state = rotateScenario 0xff True Left
         aRegIs state 0xff
         carryFlagSet state
         zeroFlagClear state
         negativeFlagSet state
 
     context "when carry bit is clear, rotating right should leave left most bit clear" $ do
-        let state = defaultState
-                    |> setAReg 0xff -- argument
-                    |> storeByte 0x10 0x6a -- ror/acc
-                    |> setPCReg 0x0010 -- set PC to location of ror/acc
-                    |> CPU.step
+        let state = rotateScenario 0xff False Right
         aRegIs state 0x7f
         carryFlagSet state
         zeroFlagClear state
         negativeFlagClear state
 
     context "when carry bit is set, rotating right should leave left most bit set" $ do
-        let state = defaultState
-                    |> setAReg 0xff -- argument
-                    |> setCarryFlag True
-                    |> storeByte 0x10 0x6a -- ror/acc
-                    |> setPCReg 0x0010 -- set PC to location of ror/acc
-                    |> CPU.step
+        let state = rotateScenario 0xff True Right
         aRegIs state 0xff
         carryFlagSet state
         zeroFlagClear state
         negativeFlagSet state
 
     context "when left most bit is clear, rotating left should clear carry bit" $ do
-        let state = defaultState
-                    |> setAReg 0x7f -- argument
-                    |> storeByte 0x10 0x2a -- rol/acc
-                    |> setPCReg 0x0010 -- set PC to location of rol/acc
-                    |> CPU.step
+        let state = rotateScenario 0x7f False Left
         aRegIs state 0xfe
         carryFlagClear state
         zeroFlagClear state
         negativeFlagSet state
 
     context "when right most bit is clear, rotating right should clear carry bit" $ do
-        let state = defaultState
-                    |> setAReg 0xfe -- argument
-                    |> storeByte 0x10 0x6a -- ror/acc
-                    |> setPCReg 0x0010 -- set PC to location of ror/acc
-                    |> CPU.step
+        let state = rotateScenario 0xfe False Right
         aRegIs state 0x7f
         carryFlagClear state
         zeroFlagClear state
         negativeFlagClear state
 
-main :: IO ()
+main :: IO () 
 main = hspec $ do
     testROM
     testMemory
