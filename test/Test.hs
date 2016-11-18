@@ -122,7 +122,7 @@ testArithmetic = describe "Arithmetic" $ do
         aRegIs state 17
         zeroFlagClear state
         negativeFlagClear state
-        overflowFlagSet state
+        overflowFlagClear state
         carryFlagSet state
 
     context "should perform simple, previous carry, non-overflow, subtraction" $ do
@@ -137,7 +137,7 @@ testArithmetic = describe "Arithmetic" $ do
         aRegIs state 18
         zeroFlagClear state
         negativeFlagClear state
-        overflowFlagSet state
+        overflowFlagClear state
         carryFlagSet state
 
     context "should perform simple, non-carried, overflowing, subtraction resulting in a carry" $ do
