@@ -7,6 +7,12 @@ import Memory
 
 mapFst f (x, y) = (f x, y)
 
+type Loader = MachineState -> Word8
+type Storer = Word8 -> MachineState -> MachineState
+type Addresser = (Loader, Storer)
+type AddresserBuilder = MachineState -> (Addresser, MachineState)
+type Operation = Addresser -> MachineState -> MachineState
+
 loadByteIncPc :: MachineState -> (Word8, MachineState)
 loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
 
@@ -27,12 +33,6 @@ popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySR
 
 popWord :: MachineState -> (Word16, MachineState)
 popWord state = (loadWord (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 2) state)
-
-type Loader = MachineState -> Word8
-type Storer = Word8 -> MachineState -> MachineState
-type Addresser = (Loader, Storer)
-type AddresserBuilder = MachineState -> (Addresser, MachineState)
-type Operation = Addresser -> MachineState -> MachineState
 
 impMode :: AddresserBuilder
 impMode state = ((loader, storer), state)

@@ -24,6 +24,24 @@ zeroFlagClear     state = it "zero flag should be clear"     $ zeroFlag     stat
 carryFlagSet      state = it "carry flag should be set"      $ carryFlag    state `shouldBe` True
 carryFlagClear    state = it "carry flag should be clear"    $ carryFlag    state `shouldBe` False
 
+testROM = describe "ROM" $
+    it "rom file header should begin with magic" $ do
+        let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ replicate 12 0x00
+        let rom = ROM {
+            mirroring = Horizontal,
+            trainer = False,
+            persistent = False,
+            inesMapper = 0,
+            mapper = 0,
+            playChoice = False,
+            unisystem = False,
+            ramSize = 0,
+            region = NTSC,
+            prg = B.empty,
+            chr = B.empty
+        }
+        parseROM (B.pack bytes) `shouldBe` Right rom
+
 testMemory = describe "Memory" $ do
     it "words should be stored little-endian" $ do
         let state = storeWord 0 0x8cf3 defaultState
@@ -151,26 +169,46 @@ testArithmetic = describe "Arithmetic" $ do
         overflowFlagClear state
         carryFlagClear state
 
-testROM = describe "ROM" $
-    it "rom file header should begin with magic" $ do
-        let bytes = [0x4e, 0x45, 0x53, 0x1a] ++ replicate 12 0x00
-        let rom = ROM {
-            mirroring = Horizontal,
-            trainer = False,
-            persistent = False,
-            inesMapper = 0,
-            mapper = 0,
-            playChoice = False,
-            unisystem = False,
-            ramSize = 0,
-            region = NTSC,
-            prg = B.empty,
-            chr = B.empty
-        }
-        parseROM (B.pack bytes) `shouldBe` Right rom
+testComparisons = describe "Comparisons" $ do
+    context "first argument is greater than second" $ do
+        let state = defaultState
+                    |> setAReg 1 -- argument
+                    |> storeByte 0x00 0 -- other argument
+                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
+                    |> storeByte 0x11 0x00 -- zpg address
+                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
+                    |> CPU.step
+        zeroFlagClear state
+        negativeFlagClear state
+        carryFlagClear state
+
+    context "first argument is less than second" $ do
+        let state = defaultState
+                    |> setAReg 0 -- argument
+                    |> storeByte 0x00 1 -- other argument
+                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
+                    |> storeByte 0x11 0x00 -- zpg address
+                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
+                    |> CPU.step
+        zeroFlagClear state
+        negativeFlagSet state
+        carryFlagSet state
+
+    context "first argument is equal to second" $ do
+        let state = defaultState
+                    |> setAReg 0 -- argument
+                    |> storeByte 0x00 0 -- other argument
+                    |> storeByte 0x10 0xc5 -- cmp/zpg instruction
+                    |> storeByte 0x11 0x00 -- zpg address
+                    |> setPCReg 0x0010 -- set PC to location of cmp/zpg
+                    |> CPU.step
+        zeroFlagSet state
+        negativeFlagClear state
+        carryFlagClear state
 
 main :: IO ()
 main = hspec $ do
+    testROM
     testMemory
     testArithmetic
-    testROM
+    testComparisons
