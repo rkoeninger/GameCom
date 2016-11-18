@@ -139,9 +139,9 @@ eor (loader, _) = transfer (xor . loader) modifyAReg
 
 bit (loader, _) state = do
     let val = loader state
+    let zero = val == 0 && aReg state == 0
     let overflow = testBit val overflowBit
     let negative = testBit val negativeBit
-    let zero = val .&. aReg state == 0
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
 shiftLeft :: Bool -> Operation
