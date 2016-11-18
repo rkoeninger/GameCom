@@ -206,9 +206,57 @@ testComparisons = describe "Comparisons" $ do
         negativeFlagClear state
         carryFlagClear state
 
+testRotate = describe "Rotate" $ do
+    context "when carry bit is clear, rotating left should leave right most bit clear" $ do
+        let state = defaultState
+                    |> setAReg 0xff -- argument
+                    |> storeByte 0x10 0x2a -- rol/acc
+                    |> setPCReg 0x0010 -- set PC to location of rol/acc
+                    |> CPU.step
+        aRegIs state 0xfe
+        carryFlagSet state
+        zeroFlagClear state
+        negativeFlagSet state
+
+    context "when carry bit is set, rotating left should leave right most bit set" $ do
+        let state = defaultState
+                    |> setAReg 0xff -- argument
+                    |> setCarryFlag True
+                    |> storeByte 0x10 0x2a -- rol/acc
+                    |> setPCReg 0x0010 -- set PC to location of rol/acc
+                    |> CPU.step
+        aRegIs state 0xff
+        carryFlagSet state
+        zeroFlagClear state
+        negativeFlagSet state
+
+    context "when carry bit is clear, rotating right should leave left most bit clear" $ do
+        let state = defaultState
+                    |> setAReg 0xff -- argument
+                    |> storeByte 0x10 0x6a -- ror/acc
+                    |> setPCReg 0x0010 -- set PC to location of ror/acc
+                    |> CPU.step
+        aRegIs state 0x7f
+        carryFlagSet state
+        zeroFlagClear state
+        negativeFlagClear state
+
+    context "when carry bit is set, rotating right should leave left most bit set" $ do
+        let state = defaultState
+                    |> setAReg 0xff -- argument
+                    |> setCarryFlag True
+                    |> storeByte 0x10 0x6a -- ror/acc
+                    |> setPCReg 0x0010 -- set PC to location of ror/acc
+                    |> CPU.step
+        aRegIs state 0xff
+        carryFlagSet state
+        zeroFlagClear state
+        negativeFlagSet state
+
 main :: IO ()
 main = hspec $ do
     testROM
     testMemory
     testArithmetic
     testComparisons
+    testRotate
