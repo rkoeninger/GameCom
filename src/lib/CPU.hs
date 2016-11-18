@@ -121,7 +121,7 @@ sbc (loader, _) state = do
     let resultWord = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
     let resultByte = wordToByte resultWord
     let carry = not $ testBit resultWord 8
-    let overflow = not $ (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
+    let overflow = (testBit a 7 /= testBit val 7) && (testBit a 7 /= testBit resultByte 7)
     setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
 comp :: (MachineState -> Word8) -> Operation
