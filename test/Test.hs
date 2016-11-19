@@ -234,6 +234,20 @@ testShift = describe "Shift" $ do
         zeroFlagIs False state
         negativeFlagIs True state
 
+    context "when carry bit is clear, shifting right should leave left most bit clear" $ do
+        let state = shiftScenario 0xff False Right
+        aRegIs 0x7f state
+        carryFlagIs True state
+        zeroFlagIs False state
+        negativeFlagIs False state
+
+    context "when carry bit is set, shifting right should leave left most bit clear" $ do
+        let state = shiftScenario 0xff True Right
+        aRegIs 0x7f state
+        carryFlagIs True state
+        zeroFlagIs False state
+        negativeFlagIs False state
+
 main = hspec $ do
     testROM
     testMemory
