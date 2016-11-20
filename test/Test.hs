@@ -5,9 +5,8 @@ import qualified Data.ByteString as B
 import Test.Hspec
 import GameCom
 import Memory
-import CPU hiding (step)
-import qualified CPU (step)
-import ROM
+import qualified CPU
+import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
 
 x |> f = f x
 
@@ -126,7 +125,7 @@ testArithmetic = describe "Arithmetic" $ do
         overflowFlagIs False state
         carryFlagIs False state
 
-compareScenario a val = do
+compareScenario a val =
     defaultState
         |> setAReg a
         |> storeByte 0x00 val

@@ -2,7 +2,7 @@
 
 module Memory where
 
-import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit, setBit)
+import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
 import Data.Default (Default(..))
 import Data.Vector.Persistent (Vector, update, index, fromList)
 import qualified Data.Vector.Persistent as P
@@ -113,7 +113,7 @@ defaultState = MachineState {
     screen       = vector (256 * 240)
 }
 
-addCycles cycles state = state { cycleCount = (cycleCount state) + cycles }
+addCycles cycles state = state { cycleCount = cycleCount state + cycles }
 
 setRAM        value state = state { ram = value }
 setAReg       value state = (setZN value state) { aReg = value }

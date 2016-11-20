@@ -1,7 +1,7 @@
-module CPU where
+module CPU (step) where
 
 import Control.Arrow ((>>>))
-import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, complement, testBit)
+import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
 import Memory
 
@@ -20,7 +20,7 @@ loadWordIncPc :: MachineState -> (Word16, MachineState)
 loadWordIncPc state = (transfer pcReg loadWord state, modifyPCReg (+ 2) state)
 
 loadWordZeroPage :: Word16 -> MachineState -> Word16
-loadWordZeroPage addr state = byteToWord (loadByte addr state) .|. byteToWord ((loadByte (addr + 1)) state) `shiftL` 8
+loadWordZeroPage addr state = byteToWord (loadByte addr state) .|. byteToWord (loadByte (addr + 1) state) `shiftL` 8
 
 pushByte :: Word8 -> MachineState -> MachineState
 pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + byteToWord (sReg state)) val state

@@ -1,9 +1,8 @@
-module ROM where
+module ROM (Mirroring(..), ROM(..), Region(..), parseROM) where
 
 import Data.Bits ((.|.), (.&.), shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
+import Data.ByteString (ByteString, pack)
 import Data.Attoparsec.ByteString (word8, anyWord8, string)
 import Data.Attoparsec.ByteString as A
 import qualified Memory as M
@@ -28,7 +27,7 @@ data ROM = ROM {
 
 pROM = do
     -- Header is 16 bytes
-    string (B.pack [0x4e, 0x45, 0x53, 0x1a]) -- "NES\x1a"
+    string $ pack [0x4e, 0x45, 0x53, 0x1a] -- "NES\x1a"
     prgSize16KB <- anyWord8
     chrSize8KB  <- anyWord8
     flags6      <- anyWord8
