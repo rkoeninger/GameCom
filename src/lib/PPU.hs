@@ -1,6 +1,6 @@
 module PPU where
 
-import Data.Bits (Bits, (.|.), (.&.), complement, testBit)
+import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
 import Data.Word (Word8, Word16)
 import Data.Vector.Persistent (Vector, index, update)
 import Memory
@@ -78,3 +78,14 @@ nextScanline runToCycle state =
 
 step :: MachineState -> MachineState
 step state = nextScanline (cyclesPerScanline + cycleCount state) state
+
+-- Returns the color (pre-palette lookup) of pixel (x,y) within the given tile.
+getPatternPixel :: PixelLayer -> Word16 -> (Word8, Word8) -> MachineState -> Word8
+getPatternPixel layer tile (x, y) state = do
+    let offset = (tile `shiftL` 4) + byteToWord y + patternTableAddr layer state
+    let plane0 = vramLoadByte offset state
+    let plane1 = vramLoadByte (offset + 8) state
+    let amount = 7 - (x `mod` 8)
+    let bit0 = (plane0 `shiftR` fromIntegral amount) .&. 0x01
+    let bit1 = (plane1 `shiftR` fromIntegral amount) .&. 0x01
+    (bit1 `shiftL` 1) .|. bit0

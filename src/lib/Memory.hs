@@ -189,6 +189,11 @@ spriteSize                 state = if testBit (controlReg state) 5 then Size8x16
 ppuMasterSlave             state =    testBit (controlReg state) 6
 vBlankNMI                  state =    testBit (controlReg state) 7
 
+patternTableAddr layer =
+    case layer of
+        BackgroundLayer -> backgroundPatternTableAddr
+        SpriteLayer     -> spritePatternTableAddr
+
 isGrayscale        state = testBit (maskReg state) 0
 showBackgroundLeft state = testBit (maskReg state) 1
 showSpritesLeft    state = testBit (maskReg state) 2
@@ -231,6 +236,12 @@ dmaTransfer value state = do
     let start = byteToWord value `shiftL` 8
     let lookup = flip loadByte state . (+ start)
     state { oamData = P.fromList $ map lookup [0..255] }
+
+vramLoadByte :: Word16 -> MachineState -> Word8
+vramLoadByte addr state = 0
+
+vramStoreByte :: Word16 -> Word8 -> MachineState -> Word8
+vramStoreByte addr val state = 0
 
 instance Storage MachineState where
     loadByte addr state
