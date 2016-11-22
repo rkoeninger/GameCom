@@ -63,9 +63,9 @@ tiles sprite state =
           addend = if testBit i 0 then 0x1000 else 0
           first = byteToWord (i .&. 0xf3) + addend
 
-priority sprite    = if testBit sprite 5 then BelowBackground else AboveBackground
-flipHorizontal sprite = testBit sprite 6
-flipVertical sprite   = testBit sprite 7
+priority       sprite = if testBit sprite 5 then BelowBackground else AboveBackground
+flipHorizontal sprite =    testBit sprite 6
+flipVertical   sprite =    testBit sprite 7
 
 renderScanline :: MachineState -> MachineState
 renderScanline = id

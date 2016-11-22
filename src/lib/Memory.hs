@@ -252,7 +252,12 @@ instance Storage MachineState where
         | addr == 0x2005 = error "attempt to read from PPU Scroll 0x2005"
         | addr == 0x2006 = error "attempt to read from PPU Addr 0x2006"
         | addr == 0x2007 = error "attempt to read from PPU Data 0x2007" -- TODO: implement
+        | addr <  0x3f00 = error "attempt to read from PPU Nametables 0x3000" -- TODO: implement
         | addr <  0x4000 = loadVramByte addr state
+        | addr <  0x4004 = error "attempt to read from APU Pulse 0 0x4001" -- TODO: implement
+        | addr <  0x4008 = error "attempt to read from APU Pulse 1 0x4005" -- TODO: implement
+        | addr <  0x400c = error "attempt to read from APU Triangle 0x4009" -- TODO: implement
+        | addr <  0x4010 = error "attempt to read from APU Noise 0x400b" -- TODO: implement
         | addr == 0x4014 = error "attempt to read from DMA Trigger 0x4014"
         | addr == 0x4015 = error "attempt to read from APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to read from Input 0x4016"
@@ -270,6 +275,10 @@ instance Storage MachineState where
         | addr == 0x2006 = storePPUAddrByte value state
         | addr == 0x2007 = error "attempt to write to PPU Data 0x2007" -- TODO: implement
         | addr <  0x4000 = storeVramByte addr value state
+        | addr <  0x4004 = error "attempt to write to APU Pulse 0 0x4001" -- TODO: implement
+        | addr <  0x4008 = error "attempt to write to APU Pulse 1 0x4005" -- TODO: implement
+        | addr <  0x400c = error "attempt to write to APU Triangle 0x4009" -- TODO: implement
+        | addr <  0x4010 = error "attempt to write to APU Noise 0x400b" -- TODO: implement
         | addr == 0x4014 = dmaTransfer value state
         | addr == 0x4015 = error "attempt to write to APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to write to Input 0x4016"
