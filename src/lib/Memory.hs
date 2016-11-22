@@ -237,11 +237,11 @@ dmaTransfer value state = do
     let lookup = flip loadByte state . (+ start)
     state { oamData = P.fromList $ map lookup [0..255] }
 
-vramLoadByte :: Word16 -> MachineState -> Word8
-vramLoadByte addr state = 0
+loadVramByte :: Word16 -> MachineState -> Word8
+loadVramByte addr state = 0
 
-vramStoreByte :: Word16 -> Word8 -> MachineState -> Word8
-vramStoreByte addr val state = 0
+storeVramByte :: Word16 -> Word8 -> MachineState -> MachineState
+storeVramByte addr val state = state
 
 instance Storage MachineState where
     loadByte addr state
@@ -253,19 +253,27 @@ instance Storage MachineState where
         | addr == 0x2004 = loadOAMByte state
         | addr == 0x2005 = error "attempt to read from PPU Scroll 0x2005"
         | addr == 0x2006 = error "attempt to read from PPU Addr 0x2006"
-        | addr == 0x2007 = error "attempt to read from PPU Data 0x2007"
+        | addr == 0x2007 = error "attempt to read from PPU Data 0x2007" -- TODO: implement
+        | addr <  0x4000 = loadVramByte addr state
         | addr == 0x4014 = error "attempt to read from DMA Trigger 0x4014"
+        | addr == 0x4015 = error "attempt to read from APU Status 0x4015" -- TODO: implement
+        | addr == 0x4016 = error "attempt to read from Input 0x4016"
+        | addr <= 0x4018 = error "attempt to read from APU 0x4018"
         | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr
 
     storeByte addr value state
         | addr <  0x2000 = modifyRAM (storeByte (addr .&. 0x07ff) value) state
         | addr == 0x2000 = setControlReg value state
         | addr == 0x2001 = setMaskReg value state
-        | addr == 0x2002 = setStatusReg value state
+        | addr == 0x2002 = error "attempt to write to PPU Status 0x2002"
         | addr == 0x2003 = state { oamAddr = value }
         | addr == 0x2004 = storeOAMByte value state
         | addr == 0x2005 = storePPUScrollByte value state
         | addr == 0x2006 = storePPUAddrByte value state
-        | addr == 0x2007 = error "attempt to write to PPU Data 0x2007"
+        | addr == 0x2007 = error "attempt to write to PPU Data 0x2007" -- TODO: implement
+        | addr <  0x4000 = storeVramByte addr value state
         | addr == 0x4014 = dmaTransfer value state
+        | addr == 0x4015 = error "attempt to write to APU Status 0x4015" -- TODO: implement
+        | addr == 0x4016 = error "attempt to write to Input 0x4016"
+        | addr <= 0x4018 = error "attempt to write to APU 0x4018"
         | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr

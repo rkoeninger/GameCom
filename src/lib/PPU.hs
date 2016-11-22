@@ -83,8 +83,8 @@ step state = nextScanline (cyclesPerScanline + cycleCount state) state
 getPatternPixel :: PixelLayer -> Word16 -> (Word8, Word8) -> MachineState -> Word8
 getPatternPixel layer tile (x, y) state = do
     let offset = (tile `shiftL` 4) + byteToWord y + patternTableAddr layer state
-    let plane0 = vramLoadByte offset state
-    let plane1 = vramLoadByte (offset + 8) state
+    let plane0 = loadVramByte offset state
+    let plane1 = loadVramByte (offset + 8) state
     let amount = 7 - (x `mod` 8)
     let bit0 = (plane0 `shiftR` fromIntegral amount) .&. 0x01
     let bit1 = (plane1 `shiftR` fromIntegral amount) .&. 0x01
