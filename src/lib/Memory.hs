@@ -189,10 +189,8 @@ spriteSize                 state = if testBit (controlReg state) 5 then Size8x16
 ppuMasterSlave             state =    testBit (controlReg state) 6
 vBlankNMI                  state =    testBit (controlReg state) 7
 
-patternTableAddr layer =
-    case layer of
-        BackgroundLayer -> backgroundPatternTableAddr
-        SpriteLayer     -> spritePatternTableAddr
+patternTableAddr BackgroundLayer = backgroundPatternTableAddr
+patternTableAddr SpriteLayer     = spritePatternTableAddr
 
 isGrayscale        state = testBit (maskReg state) 0
 showBackgroundLeft state = testBit (maskReg state) 1
