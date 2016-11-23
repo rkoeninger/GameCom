@@ -116,6 +116,8 @@ defaultState = MachineState {
 addCycles cycles state = state { cycleCount = cycleCount state + cycles }
 
 setRAM        value state = state { ram = value }
+setNametables value state = state { nametables = value }
+setPalette    value state = state { palette = value }
 setAReg       value state = (setZN value state) { aReg = value }
 setXReg       value state = (setZN value state) { xReg = value }
 setYReg       value state = (setZN value state) { yReg = value }
@@ -150,7 +152,7 @@ carryMask, zeroMask, irqMask, decimalMask, breakMask, unusedMask, overflowMask, 
 carryMask    = bit carryBit
 zeroMask     = bit zeroBit
 irqMask      = bit irqBit
-decimalMask  = bit decimalBit -- TODO: unused since BCD is disabled in NES
+decimalMask  = bit decimalBit -- NOTE: unused since BCD is disabled in NES
 breakMask    = bit breakBit
 unusedMask   = bit unusedBit -- NOTE: should always be 1 for some reason
 overflowMask = bit overflowBit
@@ -172,13 +174,15 @@ breakFlag    = getFlag breakMask
 overflowFlag = getFlag overflowMask
 negativeFlag = getFlag negativeMask
 
-modifyRAM       f = transfer (f . ram) setRAM
-modifyAReg      f = transfer (f . aReg) setAReg
-modifyXReg      f = transfer (f . xReg) setXReg
-modifyYReg      f = transfer (f . yReg) setYReg
-modifySReg      f = transfer (f . sReg) setSReg
-modifyPCReg     f = transfer (f . pcReg) setPCReg
-modifyStatusReg f = transfer (f . statusReg) setStatusReg
+modifyRAM        f = transfer (f . ram) setRAM
+modifyNametables f = transfer (f . nametables) setNametables
+modifyPalette    f = transfer (f . palette) setPalette
+modifyAReg       f = transfer (f . aReg) setAReg
+modifyXReg       f = transfer (f . xReg) setXReg
+modifyYReg       f = transfer (f . yReg) setYReg
+modifySReg       f = transfer (f . sReg) setSReg
+modifyPCReg      f = transfer (f . pcReg) setPCReg
+modifyStatusReg  f = transfer (f . statusReg) setStatusReg
 
 xScrollOffset              state =    testBit (controlReg state) 0
 yScrollOffset              state =    testBit (controlReg state) 1
@@ -189,8 +193,8 @@ spriteSize                 state = if testBit (controlReg state) 5 then Size8x16
 ppuMasterSlave             state =    testBit (controlReg state) 6
 vBlankNMI                  state =    testBit (controlReg state) 7
 
-patternTableAddr BackgroundLayer = backgroundPatternTableAddr
 patternTableAddr SpriteLayer     = spritePatternTableAddr
+patternTableAddr BackgroundLayer = backgroundPatternTableAddr
 
 isGrayscale        state = testBit (maskReg state) 0
 showBackgroundLeft state = testBit (maskReg state) 1
@@ -236,10 +240,21 @@ dmaTransfer value state = do
     state { oamData = P.fromList $ map lookup [0..255] }
 
 loadVramByte :: Word16 -> MachineState -> Word8
-loadVramByte addr state = 0
+loadVramByte addr state
+    | addr < 0x2000 = 0 -- TODO: mapper to chr_data
+    | addr < 0x3f00 = loadByte (addr .&. 0x07ff) (nametables state)
+    | addr < 0x4000 = loadByte (addr .&. 0x1f) (palette state)
+    | otherwise = error $ "Storage VRAM loadByte: Address out of range: " ++ show addr
+
+paletteAddr addr = if maskedAddr == 0x10 then 0x00 else maskedAddr
+    where maskedAddr = addr .&. 0x1f
 
 storeVramByte :: Word16 -> Word8 -> MachineState -> MachineState
-storeVramByte addr val state = state
+storeVramByte addr val state
+    | addr < 0x2000 = state -- TODO: mapper to chr_data
+    | addr < 0x3f00 = modifyNametables (storeByte (addr .&. 0x07ff) val) state
+    | addr < 0x4000 = modifyPalette (storeByte (paletteAddr addr) val) state
+    | otherwise = error $ "Storage VRAM storeByte: Address out of range: " ++ show addr
 
 instance Storage MachineState where
     loadByte addr state
@@ -252,7 +267,6 @@ instance Storage MachineState where
         | addr == 0x2005 = error "attempt to read from PPU Scroll 0x2005"
         | addr == 0x2006 = error "attempt to read from PPU Addr 0x2006"
         | addr == 0x2007 = error "attempt to read from PPU Data 0x2007" -- TODO: implement
-        | addr <  0x3f00 = error "attempt to read from PPU Nametables 0x3000" -- TODO: implement
         | addr <  0x4000 = loadVramByte addr state
         | addr <  0x4004 = error "attempt to read from APU Pulse 0 0x4001" -- TODO: implement
         | addr <  0x4008 = error "attempt to read from APU Pulse 1 0x4005" -- TODO: implement
@@ -262,7 +276,7 @@ instance Storage MachineState where
         | addr == 0x4015 = error "attempt to read from APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to read from Input 0x4016"
         | addr <= 0x4018 = error "attempt to read from APU 0x4018"
-        | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr
+        | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr -- TODO: mapper?
 
     storeByte addr value state
         | addr <  0x2000 = modifyRAM (storeByte (addr .&. 0x07ff) value) state
@@ -283,4 +297,4 @@ instance Storage MachineState where
         | addr == 0x4015 = error "attempt to write to APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to write to Input 0x4016"
         | addr <= 0x4018 = error "attempt to write to APU 0x4018"
-        | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr
+        | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr -- TODO: mapper?
