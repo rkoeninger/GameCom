@@ -66,67 +66,75 @@ data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
 type Screen = Vector Color
 
 data MachineState = MachineState {
-    cycleCount   :: Int,
-    ram          :: Vector Word8,
-    aReg         :: Word8,
-    xReg         :: Word8,
-    yReg         :: Word8,
-    sReg         :: Word8,
-    flagReg      :: Word8,
-    pcReg        :: Word16,
-    controlReg   :: Word8,
-    maskReg      :: Word8,
-    statusReg    :: Word8,
-    oamAddr      :: Word8,
-    oamData      :: Vector Word8,
-    ppuAddr      :: Word16,
-    ppuAddrHi    :: Bool,
-    ppuScrollX   :: Word8,
-    ppuScrollY   :: Word8,
-    ppuScrollDir :: ScrollDirection,
-    nametables   :: Vector Word8,
-    palette      :: Vector Word8,
-    screen       :: Vector Color
+    cycleCount    :: Int,
+    ram           :: Vector Word8,
+    aReg          :: Word8,
+    xReg          :: Word8,
+    yReg          :: Word8,
+    sReg          :: Word8,
+    flagReg       :: Word8,
+    pcReg         :: Word16,
+    controlReg    :: Word8,
+    maskReg       :: Word8,
+    statusReg     :: Word8,
+    oamAddr       :: Word8,
+    oamData       :: Vector Word8,
+    ppuAddr       :: Word16,
+    ppuAddrHi     :: Bool,
+    ppuScrollX    :: Word8,
+    ppuScrollY    :: Word8,
+    ppuScrollDir  :: ScrollDirection,
+    ppuDataBuffer :: Word8,
+    nametables    :: Vector Word8,
+    palette       :: Vector Word8,
+    screen        :: Vector Color
 }
 
 defaultState = MachineState {
-    cycleCount   = 0,
-    ram          = vector 2048,
-    aReg         = 0x00,
-    xReg         = 0x00,
-    yReg         = 0x00,
-    sReg         = 0xfd,
-    flagReg      = unusedMask .|. irqMask,
-    pcReg        = 0xc000,
-    controlReg   = 0x00,
-    maskReg      = 0x00,
-    statusReg    = 0x00,
-    oamAddr      = 0x00,
-    oamData      = vector 256,
-    ppuAddr      = 0x0000,
-    ppuAddrHi    = True,
-    ppuScrollX   = 0x00,
-    ppuScrollY   = 0x00,
-    ppuScrollDir = XDirection,
-    nametables   = vector 2048,
-    palette      = vector 32,
-    screen       = vector (256 * 240)
+    cycleCount    = 0,
+    ram           = vector 2048,
+    aReg          = 0x00,
+    xReg          = 0x00,
+    yReg          = 0x00,
+    sReg          = 0xfd,
+    flagReg       = unusedMask .|. irqMask,
+    pcReg         = 0xc000,
+    controlReg    = 0x00,
+    maskReg       = 0x00,
+    statusReg     = 0x00,
+    oamAddr       = 0x00,
+    oamData       = vector 256,
+    ppuAddr       = 0x0000,
+    ppuAddrHi     = True,
+    ppuScrollX    = 0x00,
+    ppuScrollY    = 0x00,
+    ppuScrollDir  = XDirection,
+    ppuDataBuffer = 0x00,
+    nametables    = vector 2048,
+    palette       = vector 32,
+    screen        = vector (256 * 240)
 }
 
 addCycles cycles state = state { cycleCount = cycleCount state + cycles }
 
-setRAM        value state = state { ram = value }
-setNametables value state = state { nametables = value }
-setPalette    value state = state { palette = value }
-setAReg       value state = (setZN value state) { aReg = value }
-setXReg       value state = (setZN value state) { xReg = value }
-setYReg       value state = (setZN value state) { yReg = value }
-setSReg       value state = state { sReg = value }
-setPCReg      value state = state { pcReg = value }
-setFlagReg    value state = state { flagReg = (value .|. unusedMask) .&. complement breakMask }
-setControlReg value state = state { controlReg = value }
-setMaskReg    value state = state { maskReg = value }
-setStatusReg  value state = state { statusReg = value }
+setRAM           value state = state { ram = value }
+setNametables    value state = state { nametables = value }
+setPalette       value state = state { palette = value }
+setAReg          value state = (setZN value state) { aReg = value }
+setXReg          value state = (setZN value state) { xReg = value }
+setYReg          value state = (setZN value state) { yReg = value }
+setSReg          value state = state { sReg = value }
+setPCReg         value state = state { pcReg = value }
+setFlagReg       value state = state { flagReg = (value .|. unusedMask) .&. complement breakMask }
+setControlReg    value state = state { controlReg = value }
+setMaskReg       value state = state { maskReg = value }
+setStatusReg     value state = state { statusReg = value }
+setPPUAddr       value state = state { ppuAddr = value }
+setPPUAddrHi     value state = state { ppuAddrHi = value }
+setPPUScrollX    value state = state { ppuScrollX = value }
+setPPUScrollY    value state = state { ppuScrollY = value }
+setPPUScrollDir  value state = state { ppuScrollDir = value }
+setPPUDataBuffer value state = state { ppuDataBuffer = value }
 
 setZN :: Word8 -> MachineState -> MachineState
 setZN value = setZeroFlag (value == 0) . setNegativeFlag (testBit value 7)
@@ -183,6 +191,7 @@ modifyYReg       f = transfer (f . yReg) setYReg
 modifySReg       f = transfer (f . sReg) setSReg
 modifyPCReg      f = transfer (f . pcReg) setPCReg
 modifyStatusReg  f = transfer (f . statusReg) setStatusReg
+modifyPPUAddr    f = transfer (f . ppuAddr) setPPUAddr
 
 xScrollOffset              state =    testBit (controlReg state) 0
 yScrollOffset              state =    testBit (controlReg state) 1
@@ -260,13 +269,15 @@ loadPPUStatus :: MachineState -> Word8
 loadPPUStatus = statusReg
 
 loadPPUData :: MachineState -> Word8
-loadPPUData = transfer vramAddrIncrement loadVramByte
+loadPPUData = transfer ppuAddr loadVramByte
 
--- loadPPUStatus :: MachineState -> (Word8, MachineState)
--- loadPPUStatus state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
+loadPPUStatus_ :: MachineState -> (Word8, MachineState)
+loadPPUStatus_ state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
 
--- loadPPUData :: MachineState -> (Word8, MachineState)
--- loadPPUData state = (transfer vramAddrIncrement loadVramByte state, state {  })
+loadPPUData_ :: MachineState -> (Word8, MachineState)
+loadPPUData_ state = if ppuAddr state < 0x3f00 then buffer normal else normal
+    where normal = (transfer ppuAddr loadVramByte state, transfer ((+) . vramAddrIncrement) modifyPPUAddr state)
+          buffer (value, state) = (ppuDataBuffer state, setPPUDataBuffer value state)
 
 instance Storage MachineState where
     loadByte addr state
