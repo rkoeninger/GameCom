@@ -3,7 +3,7 @@ notifications:
 env:
   - CABALVER=1.24
 language: haskell
-ghc: 8.0.1
+ghc: 8.0
 install:
   - cabal install --only-dependencies --enable-tests
 script:
