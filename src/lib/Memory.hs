@@ -256,17 +256,29 @@ storeVramByte addr val state
     | addr < 0x4000 = modifyPalette (storeByte (paletteAddr addr) val) state
     | otherwise = error $ "Storage VRAM storeByte: Address out of range: " ++ show addr
 
+loadPPUStatus :: MachineState -> Word8
+loadPPUStatus = statusReg
+
+loadPPUData :: MachineState -> Word8
+loadPPUData = transfer vramAddrIncrement loadVramByte
+
+-- loadPPUStatus :: MachineState -> (Word8, MachineState)
+-- loadPPUStatus state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
+
+-- loadPPUData :: MachineState -> (Word8, MachineState)
+-- loadPPUData state = (transfer vramAddrIncrement loadVramByte state, state {  })
+
 instance Storage MachineState where
     loadByte addr state
         | addr <  0x2000 = loadByte (addr .&. 0x07ff) (ram state)
         | addr == 0x2000 = controlReg state
         | addr == 0x2001 = maskReg state
-        | addr == 0x2002 = statusReg state
+        | addr == 0x2002 = loadPPUStatus state
         | addr == 0x2003 = error "attempt to read from OAM Addr 0x2003"
         | addr == 0x2004 = loadOAMByte state
         | addr == 0x2005 = error "attempt to read from PPU Scroll 0x2005"
         | addr == 0x2006 = error "attempt to read from PPU Addr 0x2006"
-        | addr == 0x2007 = error "attempt to read from PPU Data 0x2007" -- TODO: implement
+        | addr == 0x2007 = loadPPUData state
         | addr <  0x4000 = loadVramByte addr state
         | addr <  0x4004 = error "attempt to read from APU Pulse 0 0x4001" -- TODO: implement
         | addr <  0x4008 = error "attempt to read from APU Pulse 1 0x4005" -- TODO: implement
