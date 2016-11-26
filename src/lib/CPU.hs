@@ -5,50 +5,56 @@ import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
 import Memory
 
-mapFst f (x, y) = (f x, y)
-
-type Loader = MachineState -> Word8
+type Loader = MachineState -> (Word8, MachineState)
 type Storer = Word8 -> MachineState -> MachineState
 type Addresser = (Loader, Storer)
 type AddresserBuilder = MachineState -> (Addresser, MachineState)
 type Operation = Addresser -> MachineState -> MachineState
 
 loadByteIncPc :: MachineState -> (Word8, MachineState)
-loadByteIncPc state = (transfer pcReg loadByte state, modifyPCReg (+ 1) state)
+loadByteIncPc = transfer pcReg loadByte
+            >>> mapSnd (modifyPCReg (+ 1))
 
 loadWordIncPc :: MachineState -> (Word16, MachineState)
-loadWordIncPc state = (transfer pcReg loadWord state, modifyPCReg (+ 2) state)
+loadWordIncPc = transfer pcReg loadWord
+            >>> mapSnd (modifyPCReg (+ 2))
 
-loadWordZeroPage :: Word16 -> MachineState -> Word16
-loadWordZeroPage addr state = byteToWord (loadByte addr state) .|. byteToWord (loadByte (addr + 1) state) `shiftL` 8
+loadWordZeroPage :: Word16 -> MachineState -> (Word16, MachineState)
+loadWordZeroPage addr state = do
+    let (b0, st2) = loadByte addr state
+    let (b1, st3) = loadByte (addr + 1) st2 -- TODO : use composition operators
+    (bytesToWord b0 b1, st3)
 
 pushByte :: Word8 -> MachineState -> MachineState
-pushByte val state = modifySReg (subtract 1) $ storeByte (0x0100 + byteToWord (sReg state)) val state
+pushByte val state = storeByte (0x0100 + byteToWord (sReg state)) val state
+                  |> modifySReg (subtract 1)
 
 pushWord :: Word16 -> MachineState -> MachineState
-pushWord val state = modifySReg (subtract 2) $ storeWord (0x0100 + byteToWord (sReg state - 1)) val state
+pushWord val state = storeWord (0x0100 + byteToWord (sReg state - 1)) val state
+                  |> modifySReg (subtract 2)
 
 popByte :: MachineState -> (Word8, MachineState)
-popByte state = (loadByte (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 1) state)
+popByte state = loadByte (0x0101 + byteToWord (sReg state)) state
+             |> mapSnd (modifySReg (+ 1))
 
 popWord :: MachineState -> (Word16, MachineState)
-popWord state = (loadWord (0x0100 + byteToWord (sReg state) + 1) state, modifySReg (+ 2) state)
+popWord state = loadWord (0x0101 + byteToWord (sReg state)) state
+             |> mapSnd (modifySReg (+ 2))
 
 impMode :: AddresserBuilder
 impMode state = ((loader, storer), state)
-    where loader _ = error "This operation should not access memory"
-          storer _ _ = error "This operation should not access memory"
+    where loader = error "This operation should not access memory"
+          storer = error "This operation should not access memory"
 
 accMode :: AddresserBuilder
 accMode state = ((loader, storer), state)
-    where loader = aReg
+    where loader state = (aReg state, state)
           storer = setAReg
 
 imdMode :: AddresserBuilder
-imdMode state = ((loader, storer), newState)
-    where (val, newState) = loadByteIncPc state
-          loader _ = val
-          storer _ _ = error "Can't store in immediate mode"
+imdMode state = ((loader, storer), state)
+    where loader = loadByteIncPc
+          storer = error "Can't store in immediate mode"
 
 memoryMode :: Word16 -> Addresser
 memoryMode addr = (loader, storer)
@@ -86,38 +92,40 @@ abyMode state = mapFst mode (loadWordIncPc state)
              >>> memoryMode
 
 iixMode :: AddresserBuilder
-iixMode state = mapFst mode (loadByteIncPc state)
-    where mode = byteToWord
-             >>> (+ (byteToWord $ xReg state))
-             >>> flip loadWordZeroPage state
-             >>> memoryMode
+iixMode state = do
+    let (val, stat2) = loadByteIncPc state
+    let val2 = byteToWord val + byteToWord (xReg stat2)
+    let (val3, stat3) = loadWordZeroPage val2 stat2
+    (memoryMode val3, stat3)
+
+-- TODO: refactor these using composition operators
 
 iiyMode :: AddresserBuilder
-iiyMode state = mapFst mode (loadByteIncPc state)
-    where mode = byteToWord
-             >>> flip loadWordZeroPage state
-             >>> (+ (byteToWord $ yReg state))
-             >>> memoryMode
+iiyMode state = do
+    let (val, stat2) = loadByteIncPc state
+    let (val2, stat3) = loadWordZeroPage (byteToWord val) stat2
+    let val3 = val2 + byteToWord (yReg stat3)
+    (memoryMode val3, stat3)
 
-lda (loader, _) = transfer loader setAReg
-ldx (loader, _) = transfer loader setXReg
-ldy (loader, _) = transfer loader setYReg
+lda (loader, _) = loader >>> uncurry setAReg
+ldx (loader, _) = loader >>> uncurry setXReg
+ldy (loader, _) = loader >>> uncurry setYReg
 sta (_, storer) = transfer aReg storer
 stx (_, storer) = transfer xReg storer
 sty (_, storer) = transfer yReg storer
 
-adc (loader, _) state = do
+adc (loader, _) stat2 = do
+    let (val, state) = loader stat2
     let a = aReg state
-    let val = loader state
     let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
     let resultByte = wordToByte resultWord
     let carry = testBit resultWord 8
     let overflow = (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
     setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
-sbc (loader, _) state = do
+sbc (loader, _) stat2 = do
+    let (val, state) = loader stat2
     let a = aReg state
-    let val = loader state
     let resultWord = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
     let resultByte = wordToByte resultWord
     let carry = not $ testBit resultWord 8
@@ -125,35 +133,36 @@ sbc (loader, _) state = do
     setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
 
 comp :: (MachineState -> Word8) -> Operation
-comp reg (loader, _) state = do
-    let result = byteToWord (reg state) - byteToWord (loader state)
+comp reg (loader, _) stat2 = do
+    let (val, state) = loader stat2
+    let result = byteToWord (reg state) - byteToWord val
     setZN (wordToByte result) $ setCarryFlag (testBit result 8) state
 
 cmp = comp aReg
 cpx = comp xReg
 cpy = comp yReg
 
-add (loader, _) = transfer ((.&.) . loader) modifyAReg
-ora (loader, _) = transfer ((.|.) . loader) modifyAReg
-eor (loader, _) = transfer (xor . loader) modifyAReg
+add (loader, _) = loader >>> mapFst (.&.) >>> uncurry modifyAReg
+ora (loader, _) = loader >>> mapFst (.|.) >>> uncurry modifyAReg
+eor (loader, _) = loader >>> mapFst  xor  >>> uncurry modifyAReg
 
-bit (loader, _) state = do
-    let val = loader state
-    let zero = val == 0 && aReg state == 0
+bit (loader, _) stat2 = do
+    let (val, state) = loader stat2
+    let zero = val == 0 && aReg state == 0 -- TODO: this should be `val == 0 || aReg state == 0`
     let overflow = testBit val overflowBit
     let negative = testBit val negativeBit
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
 
 shiftLeft :: Bool -> Operation
-shiftLeft lsb (loader, storer) state = do
-    let val = loader state
+shiftLeft lsb (loader, storer) stat2 = do
+    let (val, state) = loader stat2
     let carry = testBit val 7
     let result = val `shiftL` 1 .|. (if lsb && carryFlag state then 0x01 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
 
 shiftRight :: Bool -> Operation
-shiftRight msb (loader, storer) state = do
-    let val = loader state
+shiftRight msb (loader, storer) stat2 = do
+    let (val, state) = loader stat2
     let carry = testBit val 0
     let result = val `shiftR` 1 .|. (if msb && carryFlag state then 0x80 else 0x00)
     storer result $ setZN result $ setCarryFlag carry state
@@ -163,12 +172,12 @@ ror = shiftRight True
 asl = shiftLeft  False
 lsr = shiftRight False
 
-inc (loader, storer) state = do
-    let val = loader state + 1
+inc (loader, storer) stat2 = do
+    let (val, state) = loader stat2 |> mapFst (+ 1)
     storer val $ setZN val state
 
-dec (loader, storer) state = do
-    let val = loader state - 1
+dec (loader, storer) stat2 = do
+    let (val, state) = loader stat2 |> mapFst (subtract 1)
     storer val $ setZN val state
 
 inx _ = modifyXReg (+ 1)
@@ -209,13 +218,13 @@ jmp _ = loadWordIncPc
 
 -- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
 jpi _ state = do
-    let (addr, state) = loadWordIncPc state
-    let lo = byteToWord $ loadByte addr state
-    let hi = byteToWord $ loadByte (addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff) state
-    setPCReg ((hi `shiftL` 8) .|. lo) state
+    let (addr, stat2) = loadWordIncPc state
+    let (lo, stat3) = mapFst byteToWord $ loadByte addr stat2
+    let (hi, stat4) = mapFst byteToWord $ loadByte (addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff) stat3
+    setPCReg ((hi `shiftL` 8) .|. lo) stat4
 
-jsr _ state = do
-    let (addr, state) = loadWordIncPc state
+jsr _ stat2 = do
+    let (addr, state) = loadWordIncPc stat2
     setPCReg addr $ pushWord (pcReg state - 1) state
 
 rts _ = popWord
@@ -225,7 +234,8 @@ rts _ = popWord
 brk _ = transfer ((+ 1) . pcReg) pushWord
     >>> transfer ((.|. breakMask) . flagReg) pushByte
     >>> setIRQFlag True
-    >>> transfer (loadWord breakVector) setPCReg
+    >>> loadWord breakVector
+    >>> uncurry setPCReg
 
 rti _ = popByte
     >>> uncurry setFlagReg
@@ -248,15 +258,17 @@ nmiVector   = 0xfffa :: Word16
 resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
-reset = transfer (loadWord resetVector) setPCReg
+reset = loadWord resetVector >>> uncurry setPCReg
 
 nmi = transfer pcReg pushWord
   >>> transfer flagReg pushByte
-  >>> transfer (loadWord nmiVector) setPCReg
+  >>> loadWord nmiVector
+  >>> uncurry setPCReg
 
 irt = transfer pcReg pushWord
   >>> transfer flagReg pushByte
-  >>> transfer (loadWord breakVector) setPCReg
+  >>> loadWord breakVector
+  >>> uncurry setPCReg
 
 irq state =
     if irqFlag state

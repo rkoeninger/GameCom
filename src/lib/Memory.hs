@@ -2,11 +2,28 @@
 
 module Memory where
 
+import Control.Arrow((>>>))
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
 import Data.Default (Default(..))
 import Data.Vector.Persistent (Vector, update, index, fromList)
 import qualified Data.Vector.Persistent as P
 import Data.Word (Word8, Word16)
+
+at :: (Integral n, Show n) => n -> Vector a -> a
+at i v = case index v (fromIntegral i) of
+    Just result -> result
+    _ -> error $ "invalid vector index: " ++ show i
+
+(|>) :: a -> (a -> b) -> b
+(|>) = flip ($)
+
+infixl 1 |>
+
+mapFst :: (a -> b) -> (a, c) -> (b, c)
+mapFst f (x, y) = (f x, y)
+
+mapSnd :: (a -> b) -> (c, a) -> (c, b)
+mapSnd f (x, y) = (x, f y)
 
 transfer :: (a -> b) -> (b -> a -> c) -> a -> c
 transfer from to state = to (from state) state
@@ -17,18 +34,22 @@ byteToWord = fromIntegral
 wordToByte :: Word16 -> Word8
 wordToByte = fromIntegral
 
-class Storage m where
-    loadByte :: Word16 -> m -> Word8
+bytesToWord :: Word8 -> Word8 -> Word16
+bytesToWord b0 b1 = byteToWord b0 .|. byteToWord b1 `shiftL` 8
 
-    loadWord :: Word16 -> m -> Word16
-    loadWord addr storage = b0 .|. b1 `shiftL` 8
-        where b0 = byteToWord $ loadByte addr storage
-              b1 = byteToWord $ loadByte (addr + 1) storage
+class Storage m where
+    loadByte :: Word16 -> m -> (Word8, m)
+
+    loadWord :: Word16 -> m -> (Word16, m)
+    loadWord addr storage = (b0 .|. b1 `shiftL` 8, s3)
+        where (b0, s2) = mapFst byteToWord $ loadByte addr storage
+              (b1, s3) = mapFst byteToWord $ loadByte (addr + 1) s2
 
     storeByte :: Word16 -> Word8 -> m -> m
 
     storeWord :: Word16 -> Word16 -> m -> m
-    storeWord addr word = storeByte addr b0 . storeByte (addr + 1) b1
+    storeWord addr word = storeByte addr b0
+                      >>> storeByte (addr + 1) b1
         where b0 = wordToByte $ word .&. 0xff
               b1 = wordToByte $ word `shiftR` 8
 
@@ -36,10 +57,7 @@ vector :: Default d => Int -> Vector d
 vector n = fromList (replicate n def)
 
 instance Storage (Vector Word8) where
-    loadByte addr ram =
-        case index ram (fromIntegral addr) of
-        Just value -> value
-        _ -> error $ "invalid RAM address: " ++ show addr
+    loadByte addr ram = (at addr ram, ram)
     storeByte = update . fromIntegral
 
 data Sprite = Sprite {
@@ -137,7 +155,8 @@ setPPUScrollDir  value state = state { ppuScrollDir = value }
 setPPUDataBuffer value state = state { ppuDataBuffer = value }
 
 setZN :: Word8 -> MachineState -> MachineState
-setZN value = setZeroFlag (value == 0) . setNegativeFlag (testBit value 7)
+setZN value = setZeroFlag (value == 0)
+          >>> setNegativeFlag (testBit value 7)
 
 setFlag :: Word8 -> Bool -> MachineState -> MachineState
 setFlag mask value state = state { flagReg = op mask (flagReg state) }
@@ -185,6 +204,7 @@ negativeFlag = getFlag negativeMask
 modifyRAM        f = transfer (f . ram) setRAM
 modifyNametables f = transfer (f . nametables) setNametables
 modifyPalette    f = transfer (f . palette) setPalette
+
 modifyAReg       f = transfer (f . aReg) setAReg
 modifyXReg       f = transfer (f . xReg) setXReg
 modifyYReg       f = transfer (f . yReg) setYReg
@@ -221,13 +241,17 @@ setInVBlank       value = if value then modifyStatusReg (.|. bit 7) else id
 incOAMAddr :: MachineState -> MachineState
 incOAMAddr state = state { oamAddr = oamAddr state + 1 }
 
-loadOAMByte :: MachineState -> Word8
-loadOAMByte state = case index (oamData state) (fromIntegral $ oamAddr state) of
-    Just value -> value
-    _ -> error $ "Invalid OAM address: " ++ show (oamAddr state)
+loadOAMByte :: MachineState -> (Word8, MachineState)
+loadOAMByte state = (at (oamAddr state) (oamData state), state)
 
 storeOAMByte :: Word8 -> MachineState -> MachineState
 storeOAMByte value state = (incOAMAddr state) { oamData = update (fromIntegral $ oamAddr state) value (oamData state) }
+
+dmaTransfer :: Word8 -> MachineState -> MachineState
+dmaTransfer value state = do
+    let start = byteToWord value `shiftL` 8
+    let copy addr = loadByte addr >>> uncurry storeOAMByte
+    foldr copy state [start .. start + 255]
 
 storePPUAddrByte :: Word8 -> MachineState -> MachineState
 storePPUAddrByte value state = state { ppuAddr = newAddr, ppuAddrHi = not hi }
@@ -242,17 +266,16 @@ storePPUScrollByte value state = case ppuScrollDir state of
     XDirection -> state { ppuScrollX = value, ppuScrollDir = YDirection }
     YDirection -> state { ppuScrollY = value, ppuScrollDir = XDirection }
 
-dmaTransfer :: Word8 -> MachineState -> MachineState
-dmaTransfer value state = do
-    let start = byteToWord value `shiftL` 8
-    let lookup = flip loadByte state . (+ start)
-    state { oamData = P.fromList $ map lookup [0..255] }
+-- TODO: refactor this with modifyNametables
+loadNT state (value, nm) = (value, state { nametables = nm })
+loadPT state (value, pt) = (value, state { palette = pt })
 
-loadVramByte :: Word16 -> MachineState -> Word8
+-- TODO: refactor to not return (Word8, MachineState) ?
+loadVramByte :: Word16 -> MachineState -> (Word8, MachineState)
 loadVramByte addr state
-    | addr < 0x2000 = 0 -- TODO: mapper to chr_data
-    | addr < 0x3f00 = loadByte (addr .&. 0x07ff) (nametables state)
-    | addr < 0x4000 = loadByte (addr .&. 0x1f) (palette state)
+    | addr < 0x2000 = (0, state) -- TODO: mapper to chr_data
+    | addr < 0x3f00 = loadNT state $ loadByte (addr .&. 0x07ff) (nametables state)
+    | addr < 0x4000 = loadPT state $ loadByte (addr .&. 0x1f) (palette state)
     | otherwise = error $ "Storage VRAM loadByte: Address out of range: " ++ show addr
 
 paletteAddr addr = if maskedAddr == 0x10 then 0x00 else maskedAddr
@@ -265,25 +288,31 @@ storeVramByte addr val state
     | addr < 0x4000 = modifyPalette (storeByte (paletteAddr addr) val) state
     | otherwise = error $ "Storage VRAM storeByte: Address out of range: " ++ show addr
 
-loadPPUStatus :: MachineState -> Word8
-loadPPUStatus = statusReg
+-- TODO: remove this
 
-loadPPUData :: MachineState -> Word8
-loadPPUData = transfer ppuAddr loadVramByte
+-- loadPPUStatus0 :: MachineState -> Word8
+-- loadPPUStatus0 = statusReg
 
-loadPPUStatus_ :: MachineState -> (Word8, MachineState)
-loadPPUStatus_ state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
+-- loadPPUData0 :: MachineState -> Word8
+-- loadPPUData0 = transfer ppuAddr loadVramByte
 
-loadPPUData_ :: MachineState -> (Word8, MachineState)
-loadPPUData_ state = if ppuAddr state < 0x3f00 then buffer normal else normal
-    where normal = (transfer ppuAddr loadVramByte state, transfer ((+) . vramAddrIncrement) modifyPPUAddr state)
-          buffer (value, state) = (ppuDataBuffer state, setPPUDataBuffer value state)
+loadPPUStatus :: MachineState -> (Word8, MachineState)
+loadPPUStatus state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
+
+loadPPUData :: MachineState -> (Word8, MachineState)
+loadPPUData state = if ppuAddr state < 0x3f00 then buffer normal else normal
+    where (val, stat2) = transfer ppuAddr loadVramByte state
+          stat3 = transfer ((+) . vramAddrIncrement) modifyPPUAddr stat2
+          normal = (val, stat3)
+          buffer (value, stat4) = (ppuDataBuffer stat4, setPPUDataBuffer value stat4)
+
+loadRM state (value, rm) = (value, state { ram = rm })
 
 instance Storage MachineState where
     loadByte addr state
-        | addr <  0x2000 = loadByte (addr .&. 0x07ff) (ram state)
-        | addr == 0x2000 = controlReg state
-        | addr == 0x2001 = maskReg state
+        | addr <  0x2000 = loadRM state $ loadByte (addr .&. 0x07ff) (ram state)
+        | addr == 0x2000 = error "attempt to read from PPU Control 0x2000"
+        | addr == 0x2001 = error "attempt to read from PPU Mask 0x2001"
         | addr == 0x2002 = loadPPUStatus state
         | addr == 0x2003 = error "attempt to read from OAM Addr 0x2003"
         | addr == 0x2004 = loadOAMByte state

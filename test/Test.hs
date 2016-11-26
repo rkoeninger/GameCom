@@ -8,10 +8,6 @@ import Memory
 import qualified CPU
 import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
 
-x |> f = f x
-
-infixl 1 |>
-
 aRegIs x state = it ("accumulator should be " ++ show x) $ aReg state `shouldBe` x
 
 negativeFlagIs x state = it ("negative flag should be " ++ show x) $ negativeFlag state `shouldBe` x
@@ -40,12 +36,12 @@ testROM = describe "ROM" $
 testMemory = describe "Memory" $ do
     it "words should be stored little-endian" $ do
         let state = storeWord 0 0x8cf3 defaultState
-        loadByte 0 state `shouldBe` 0xf3
-        loadByte 1 state `shouldBe` 0x8c
+        fst (loadByte 0 state) `shouldBe` 0xf3
+        fst (loadByte 1 state) `shouldBe` 0x8c
 
     it "words should be loaded little-endian" $ do
         let state = storeByte 1 0x8c $ storeByte 0 0xf3 defaultState
-        loadWord 0 state `shouldBe` 0x8cf3
+        fst (loadWord 0 state) `shouldBe` 0x8cf3
 
 arithmeticScenario a val carry f = do
     let opCode = case f 2 1 of
