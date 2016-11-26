@@ -1,6 +1,8 @@
 module APU where
 
 import Data.Word (Word8, Word16)
+
+import Base
 import Memory
 
 cyclesPerEvenTick = 7438;

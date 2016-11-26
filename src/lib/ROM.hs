@@ -5,7 +5,8 @@ import Data.Word (Word8, Word16)
 import Data.ByteString (ByteString, pack)
 import Data.Attoparsec.ByteString (word8, anyWord8, string)
 import Data.Attoparsec.ByteString as A
-import qualified Memory as M
+
+import Base
 
 data Mirroring = Horizontal | Vertical | FourScreen deriving (Eq, Show)
 
@@ -48,7 +49,7 @@ pROM = do
         mapper     = (flags7 .&. 0xf0) .|. (flags6 `shiftR` 4),
         playChoice = testBit flags7 1,
         unisystem  = testBit flags7 0,
-        ramSize    = M.byteToWord ramSize8KB `shiftL` 13,
+        ramSize    = byteToWord ramSize8KB `shiftL` 13,
         region     = if testBit flags9 0 then PAL else NTSC,
         prg = prgBytes,
         chr = chrBytes

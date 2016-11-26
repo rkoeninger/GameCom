@@ -3,10 +3,12 @@ module Main where
 import Control.Monad (forM_)
 import qualified Data.ByteString as B
 import Test.Hspec
-import GameCom
+
+import Base
 import Memory
 import qualified CPU
 import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
+import GameCom
 
 aRegIs x state = it ("accumulator should be " ++ show x) $ aReg state `shouldBe` x
 

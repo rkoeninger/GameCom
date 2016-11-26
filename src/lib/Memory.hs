@@ -9,39 +9,13 @@ import Data.Vector.Persistent (Vector, update, index, fromList)
 import qualified Data.Vector.Persistent as P
 import Data.Word (Word8, Word16)
 
-at :: (Integral n, Show n) => n -> Vector a -> a
-at i v = case index v (fromIntegral i) of
-    Just result -> result
-    _ -> error $ "invalid vector index: " ++ show i
-
-(|>) :: a -> (a -> b) -> b
-(|>) = flip ($)
-
-infixl 1 |>
-
-mapFst :: (a -> b) -> (a, c) -> (b, c)
-mapFst f (x, y) = (f x, y)
-
-mapSnd :: (a -> b) -> (c, a) -> (c, b)
-mapSnd f (x, y) = (x, f y)
-
-transfer :: (a -> b) -> (b -> a -> c) -> a -> c
-transfer from to state = to (from state) state
-
-byteToWord :: Word8 -> Word16
-byteToWord = fromIntegral
-
-wordToByte :: Word16 -> Word8
-wordToByte = fromIntegral
-
-bytesToWord :: Word8 -> Word8 -> Word16
-bytesToWord b0 b1 = byteToWord b0 .|. byteToWord b1 `shiftL` 8
+import Base
 
 class Storage m where
     loadByte :: Word16 -> m -> (Word8, m)
 
     loadWord :: Word16 -> m -> (Word16, m)
-    loadWord addr storage = (b0 .|. b1 `shiftL` 8, s3)
+    loadWord addr storage = (b0 .|. b1 `shiftL` 8, s3) -- TODO : use bytesToWord
         where (b0, s2) = mapFst byteToWord $ loadByte addr storage
               (b1, s3) = mapFst byteToWord $ loadByte (addr + 1) s2
 
@@ -287,14 +261,6 @@ storeVramByte addr val state
     | addr < 0x3f00 = modifyNametables (storeByte (addr .&. 0x07ff) val) state
     | addr < 0x4000 = modifyPalette (storeByte (paletteAddr addr) val) state
     | otherwise = error $ "Storage VRAM storeByte: Address out of range: " ++ show addr
-
--- TODO: remove this
-
--- loadPPUStatus0 :: MachineState -> Word8
--- loadPPUStatus0 = statusReg
-
--- loadPPUData0 :: MachineState -> Word8
--- loadPPUData0 = transfer ppuAddr loadVramByte
 
 loadPPUStatus :: MachineState -> (Word8, MachineState)
 loadPPUStatus state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })

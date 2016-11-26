@@ -3,6 +3,8 @@ module CPU (step) where
 import Control.Arrow ((>>>))
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
+
+import Base
 import Memory
 
 type Loader = MachineState -> (Word8, MachineState)

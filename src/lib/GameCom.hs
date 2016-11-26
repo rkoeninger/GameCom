@@ -1,6 +1,8 @@
 module GameCom where
 
 import Control.Arrow ((>>>))
+
+import Base
 import Memory
 import ROM
 import qualified CPU

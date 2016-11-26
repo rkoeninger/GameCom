@@ -3,6 +3,8 @@ module PPU where
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
 import Data.Word (Word8, Word16)
 import Data.Vector.Persistent (Vector, index, update)
+
+import Base
 import Memory
 
 screenWidth       = 256
