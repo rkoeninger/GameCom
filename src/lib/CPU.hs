@@ -150,7 +150,7 @@ eor (loader, _) = loader >>> mapFst  xor  >>> uncurry modifyAReg
 
 bit (loader, _) stat2 = do
     let (val, state) = loader stat2
-    let zero = val == 0 && aReg state == 0 -- TODO: this should be `val == 0 || aReg state == 0`
+    let zero = val .&. aReg state == 0
     let overflow = testBit val overflowBit
     let negative = testBit val negativeBit
     setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
