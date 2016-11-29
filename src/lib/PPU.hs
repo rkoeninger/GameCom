@@ -7,13 +7,20 @@ import Data.Vector.Persistent (Vector, index, update)
 import Base
 import Memory
 
+data NametableAddress = NametableAddress {
+    xIndex :: Word8,
+    yIndex :: Word8,
+    base :: Word16
+}
+
 screenWidth       = 256
 screenHeight      = 240
 cyclesPerScanline = 114
 vBlankScanline    = 241
 lastScanline      = 261
 
-palette = [
+colors :: [Color]
+colors = [
     (0x7c, 0x7c, 0x7c), (0x00, 0x00, 0xfc), (0x00, 0x00, 0xbc), (0x44, 0x28, 0xbc),
     (0x94, 0x00, 0x84), (0xa8, 0x00, 0x20), (0xa8, 0x10, 0x00), (0x88, 0x14, 0x00),
     (0x50, 0x30, 0x00), (0x00, 0x78, 0x00), (0x00, 0x68, 0x00), (0x00, 0x58, 0x00),
@@ -32,9 +39,7 @@ palette = [
     (0x00, 0xfc, 0xfc), (0xf8, 0xd8, 0xf8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00)]
 
 getPixel :: (Int, Int) -> Screen -> Color
-getPixel (x, y) screen = case index screen (x + y * 256) of
-    Just color -> color
-    _ -> error $ "Co-ordinates not on screen: " ++ show x ++ ", " ++ show y
+getPixel (x, y) screen = at (x + y * 256) screen
 
 putPixel :: (Int, Int) -> Color -> Screen -> Screen
 putPixel (x, y) = update (x + y * 256)
@@ -91,3 +96,46 @@ getPatternPixel layer tile (x, y) state = do
     let bit0 = (plane0 `shiftR` fromIntegral amount) .&. 0x01
     let bit1 = (plane1 `shiftR` fromIntegral amount) .&. 0x01
     ((bit1 `shiftL` 1) .|. bit0, stat3)
+
+nametableAddr :: Word16 -> Word16 -> NametableAddress
+nametableAddr x y = do
+    let xIndex = x `mod` 64
+    let yIndex = y `mod` 60
+    let base = case (xIndex >= 32, yIndex >= 30) of
+               (False, False) -> 0x2000
+               (True,  False) -> 0x2400
+               (False, True)  -> 0x2800
+               (True,  True)  -> 0x2c00
+    NametableAddress {
+        base = base,
+        xIndex = wordToByte (xIndex `mod` 32),
+        yIndex = wordToByte (yIndex `mod` 30)
+    }
+
+getBackgroundPixel :: Word8 -> MachineState -> (Maybe Color, MachineState)
+getBackgroundPixel x state = do
+    let x2 = byteToWord x + byteToWord (ppuScrollX state)
+    let y2 = byteToWord (scanline state) + byteToWord (ppuScrollY state)
+    let nt = nametableAddr (x2 `shiftR` 3) (y2 `shiftR` 3)
+    let ntBase = base nt
+    let ntXIndex = byteToWord $ xIndex nt
+    let ntYIndex = byteToWord $ yIndex nt
+    let xSub = wordToByte $ x2 .&. 0x07
+    let ySub = wordToByte $ y2 .&. 0x07
+    let (tile, stat2) = loadVramByte (ntBase + (ntXIndex `shiftL` 5) + ntYIndex) state
+    let (patternColor, stat3) = getPatternPixel BackgroundLayer (byteToWord tile) (xSub, ySub) stat2
+    if patternColor == 0 then
+        (Nothing, stat2)
+    else do
+        let group = ((ntYIndex .&. 0xfffc) `shiftL` 1) + (ntXIndex `shiftR` 2)
+        let (attr, stat4) = loadVramByte (ntBase + 0x03c0 + group) stat3
+        let left = (ntXIndex .&. 0x03) < 2
+        let top  = (ntYIndex .&. 0x03) < 2
+        let attrTableColor = case (left, top) of
+                             (True,  True)  -> attr .&. 0x03
+                             (False, True)  -> (attr `shiftR` 2) .&. 0x03
+                             (True,  False) -> (attr `shiftR` 4) .&. 0x03
+                             (False, False) -> (attr `shiftR` 6) .&. 0x03
+        let tileColor = (attrTableColor `shiftL` 2) .|. patternColor
+        let (paletteIndex, stat5) = loadVramByte (0x3f00 + byteToWord tileColor) stat4
+        (Just(colors !! fromIntegral (paletteIndex .&. 0x3f)), stat5)

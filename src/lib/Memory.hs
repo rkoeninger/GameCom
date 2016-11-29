@@ -20,13 +20,6 @@ data SpriteSize = Size8x8 | Size8x16
 data SpritePriority = AboveBackground | BelowBackground
 data ScrollDirection = XDirection | YDirection
 data PixelLayer = BackgroundLayer | SpriteLayer
-
-data NametableAddress = NametableAddress {
-    xIndex :: Word8,
-    yIndex :: Word8,
-    base :: Word16
-}
-
 type Color = (Word8, Word8, Word8)
 type SpriteColor = (SpritePriority, Color)
 data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
@@ -52,6 +45,7 @@ data MachineState = MachineState {
     ppuScrollY    :: Word8,
     ppuScrollDir  :: ScrollDirection,
     ppuDataBuffer :: Word8,
+    scanline      :: Word8,
     nametables    :: Vector Word8,
     palette       :: Vector Word8,
     screen        :: Vector Color
@@ -77,6 +71,7 @@ defaultState = MachineState {
     ppuScrollY    = 0x00,
     ppuScrollDir  = XDirection,
     ppuDataBuffer = 0x00,
+    scanline      = 0x00,
     nametables    = vector 2048,
     palette       = vector 32,
     screen        = vector (256 * 240)
