@@ -13,6 +13,12 @@ data NametableAddress = NametableAddress {
     base :: Word16
 }
 
+data StepResult = StepResult {
+    vBlankResult :: Bool, -- We entered VBLANK and must generate an NMI.
+    newFrameResult :: Bool, -- We wrapped around to the next scanline.
+    scanlineIrqResult :: Bool -- The mapper wants to execute a scanline IRQ.
+}
+
 screenWidth       = 256
 screenHeight      = 240
 cyclesPerScanline = 114
@@ -178,6 +184,12 @@ computeVisibleSprites state0 = do
                     (results, setSpriteOverflow True state)
             else
                 recur rest results state
+
+-- TODO: set sprite zero on this frame or the next one?
+startVBlank :: StepResult -> MachineState -> (StepResult, MachineState)
+startVBlank result state = (newResult, newState)
+    where newResult = result { vBlankResult = vBlankNMI state }
+          newState = state |> setInVBlank True |> setSpriteZeroHit False
 
 renderScanline :: MachineState -> MachineState
 renderScanline = id
