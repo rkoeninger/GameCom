@@ -171,7 +171,7 @@ computeVisibleSprites :: MachineState -> ([Maybe Word8], MachineState)
 computeVisibleSprites state0 = do
         let (results, state) = recur [0 .. 63] [] state0
         let l = length results
-        (results |> reverse |> (++ replicate l Nothing), state)
+        (results |> reverse |> (++ replicate (8 - l) Nothing), state)
     where recur [] results state = (results, state)
           recur (i : rest) results state = do
             let sprite = getSpriteInfo (byteToWord i) state
