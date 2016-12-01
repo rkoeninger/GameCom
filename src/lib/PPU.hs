@@ -70,9 +70,10 @@ tiles sprite state =
           addend = if testBit i 0 then 0x1000 else 0
           first = byteToWord (i .&. 0xf3) + addend
 
-priority       sprite = if testBit sprite 5 then BelowBackground else AboveBackground
-flipHorizontal sprite =    testBit sprite 6
-flipVertical   sprite =    testBit sprite 7
+spritePalette  sprite = attribute sprite .&. 0x03 + 4
+priority       sprite = if testBit (attribute sprite) 5 then BelowBackground else AboveBackground
+flipHorizontal sprite =    testBit (attribute sprite) 6
+flipVertical   sprite =    testBit (attribute sprite) 7
 
 renderScanline :: MachineState -> MachineState
 renderScanline = id
@@ -120,6 +121,7 @@ getSpriteInfo index state =
                 return                        -}
 
 -- Returns the color (pre-palette lookup) of pixel (x,y) within the given tile.
+-- TODO : have x, y not be a tuple
 getPatternPixel :: PixelLayer -> Word16 -> (Word8, Word8) -> MachineState -> (Word8, MachineState)
 getPatternPixel layer tile (x, y) state = do
     let offset = (tile `shiftL` 4) + byteToWord y + patternTableAddr layer state
@@ -158,49 +160,26 @@ getBackgroundPixel x state = do
         let (paletteIndex, stat5) = loadVramByte (0x3f00 + byteToWord tileColor) stat4
         (Just(colors !! fromIntegral (paletteIndex .&. 0x3f)), stat5)
 
-getSpritePixel :: [Maybe Word8] -> Word8 -> Bool -> MachineState -> Maybe SpriteColor
-getSpritePixel [] _ _ _ = Nothing
-getSpritePixel (Nothing : _) _ _ _ = Nothing
+getSpritePixel :: [Maybe Word8] -> Word8 -> Bool -> MachineState -> (MachineState, Maybe SpriteColor)
+getSpritePixel [] _ _ state = (state, Nothing)
+getSpritePixel (Nothing : _) _ _ state = (state, Nothing)
 getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
     let sprite = getSpriteInfo (byteToWord spriteIndex) state
     if inBoundingBox sprite x (scanline state) state then
         getSpritePixel rest x opaqueBackground state
-    else
-        case tiles sprite state of -- TODO: 8x16 not implemented
-        Tile8x8 tile -> Nothing
-        Tile8x16 tile _ -> Nothing
-{-
-let pattern_color;
-match sprite.tiles(self) {
-    // TODO: 8x16 rendering
-    SpriteTiles8x8(tile) | SpriteTiles8x16(tile, _) => {
-        let mut x = x - sprite.x;
-        if sprite.flip_horizontal() { x = 7 - x; }
-
-        let mut y = self.scanline as u8 - sprite.y;
-        if sprite.flip_vertical() { y = 7 - y; }
-
-        debug_assert!(x < 8, "sprite X miscalculation");
-        debug_assert!(y < 8, "sprite Y miscalculation");
-
-        pattern_color = self.get_pattern_pixel(PatternPixelKind::Sprite, tile, x, y);
-    }
-}
-
-// If the pattern color was zero, this part of the sprite is transparent.
-if pattern_color == 0 {
-    continue
-}
-
-// OK, so we know this pixel is opaque. Now if this is the first sprite and the
-// background was not transparent, set sprite 0 hit.
-if index == 0 && background_opaque {
-    self.regs.status.set_sprite_zero_hit(true);
-}
-
-// Determine final tile color and do the palette lookup.
-let tile_color = (sprite.palette() << 2) | pattern_color;
-let palette_index = self.vram.loadb(0x3f00 + (tile_color as u16)) & 0x3f;
-let final_color = self.get_color(palette_index);
-
-return Some(SpriteColor { priority: sprite.priority(), color: final_color });    -}
+    else do
+        let tile = case tiles sprite state of -- TODO: 8x16 not implemented
+                   Tile8x8 t -> t
+                   Tile8x16 t _ -> t
+        let sl = scanline state
+        let x2 = if flipHorizontal sprite then 7 - x + xPosition sprite else x - xPosition sprite
+        let y2 = if flipVertical sprite then 7 - sl + yPosition sprite else sl - yPosition sprite
+        let (patternColor, stat2) = getPatternPixel SpriteLayer tile (x2, y2) state
+        if patternColor == 0 then
+            getSpritePixel rest x opaqueBackground state
+        else do
+            let stat3 = if (spriteIndex == 0) && opaqueBackground then setSpriteZeroHit True stat2 else stat2
+            let tileColor = (spritePalette sprite `shiftL` 2) .|. patternColor
+            let (paletteIndex, stat4) = loadVramByte (0x3f00 + byteToWord tileColor) stat3
+            let finalColor = colors !! fromIntegral (paletteIndex .&. 0x3f)
+            (stat4, Just (priority sprite, finalColor))
