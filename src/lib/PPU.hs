@@ -99,17 +99,6 @@ getSpriteInfo index state =
         xPosition = at (index * 4 + 3) (oamData state)
     }
 
-mapSprites :: (Word8 -> Sprite -> MachineState -> (Bool, MachineState)) -> MachineState -> MachineState
-mapSprites f = recur [0 .. 63]
-    where recur [] state = state
-          recur (i : rest) state = do
-              let sprite = getSpriteInfo (byteToWord i) state
-              let (continue, stat2) = f i sprite state
-              if not continue then
-                  stat2
-              else
-                  recur rest stat2
-
 -- Returns the color (pre-palette lookup) of pixel (x,y) within the given tile.
 -- TODO : have x, y not be a tuple
 getPatternPixel :: PixelLayer -> Word16 -> (Word8, Word8) -> MachineState -> (Word8, MachineState)
@@ -173,6 +162,22 @@ getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
             let (paletteIndex, stat4) = loadVramByte (0x3f00 + byteToWord tileColor) stat3
             let finalColor = colors !! fromIntegral (paletteIndex .&. 0x3f)
             (stat4, Just (priority sprite, finalColor))
+
+computeVisibleSprites :: MachineState -> ([Maybe Word8], MachineState)
+computeVisibleSprites state0 = do
+        let (results, state) = recur [0 .. 63] [] state0
+        let l = length results
+        (results |> reverse |> (++ replicate l Nothing), state)
+    where recur [] results state = (results, state)
+          recur (i : rest) results state = do
+            let sprite = getSpriteInfo (byteToWord i) state
+            if onScanline sprite (scanline state) state then
+                if length results < 8 then
+                    recur rest (Just i : results) state
+                else
+                    (results, setSpriteOverflow True state)
+            else
+                recur rest results state
 
 renderScanline :: MachineState -> MachineState
 renderScanline = id
