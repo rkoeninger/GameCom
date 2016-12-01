@@ -75,18 +75,6 @@ priority       sprite = if testBit (attribute sprite) 5 then BelowBackground els
 flipHorizontal sprite =    testBit (attribute sprite) 6
 flipVertical   sprite =    testBit (attribute sprite) 7
 
-renderScanline :: MachineState -> MachineState
-renderScanline = id
-
-nextScanline :: Int -> MachineState -> MachineState
-nextScanline runToCycle state =
-    if runToCycle >= cycleCount state
-        then state
-        else nextScanline (runToCycle - 1) (renderScanline state)
-
-step :: MachineState -> MachineState
-step state = nextScanline (cyclesPerScanline + cycleCount state) state
-
 nametableAddr :: Word16 -> Word16 -> NametableAddress
 nametableAddr x y = do
     let xIndex = x `mod` 64
@@ -111,14 +99,16 @@ getSpriteInfo index state =
         xPosition = at (index * 4 + 3) (oamData state)
     }
 
---mapSprites :: (Sprite -> MachineState -> (MachineState, Bool)) -> MachineState
---mapSprites f = () [0 .. 63]
-
-{-  fn each_sprite<F>(&mut self, mut f: F) where F: FnMut(&mut Ppu, &SpriteStruct, u8) -> bool{
-        for i in 0..64
-            let sprite = self.make_sprite_info(i as u16)
-            if !f(self, &sprite, i as u8)
-                return                        -}
+mapSprites :: (Word8 -> Sprite -> MachineState -> (Bool, MachineState)) -> MachineState -> MachineState
+mapSprites f = recur [0 .. 63]
+    where recur [] state = state
+          recur (i : rest) state = do
+              let sprite = getSpriteInfo (byteToWord i) state
+              let (continue, stat2) = f i sprite state
+              if not continue then
+                  stat2
+              else
+                  recur rest stat2
 
 -- Returns the color (pre-palette lookup) of pixel (x,y) within the given tile.
 -- TODO : have x, y not be a tuple
@@ -183,3 +173,15 @@ getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
             let (paletteIndex, stat4) = loadVramByte (0x3f00 + byteToWord tileColor) stat3
             let finalColor = colors !! fromIntegral (paletteIndex .&. 0x3f)
             (stat4, Just (priority sprite, finalColor))
+
+renderScanline :: MachineState -> MachineState
+renderScanline = id
+
+nextScanline :: Int -> MachineState -> MachineState
+nextScanline runToCycle state =
+    if runToCycle >= cycleCount state
+        then state
+        else nextScanline (runToCycle - 1) (renderScanline state)
+
+step :: MachineState -> MachineState
+step state = nextScanline (cyclesPerScanline + cycleCount state) state
