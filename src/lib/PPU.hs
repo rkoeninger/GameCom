@@ -134,9 +134,7 @@ getBackgroundPixel x state = do
     else do
         let group = ((ntYIndex .&. 0xfffc) `shiftL` 1) + (ntXIndex `shiftR` 2)
         let (attr, stat4) = loadVramByte (ntBase + 0x03c0 + group) stat3
-        let left = (ntXIndex .&. 0x03) < 2
-        let top  = (ntYIndex .&. 0x03) < 2
-        let attrTableColor = case (left, top) of
+        let attrTableColor = case ((ntXIndex .&. 0x03) < 2, (ntYIndex .&. 0x03) < 2) of
                              (True,  True)  -> attr .&. 0x03
                              (False, True)  -> (attr `shiftR` 2) .&. 0x03
                              (True,  False) -> (attr `shiftR` 4) .&. 0x03
