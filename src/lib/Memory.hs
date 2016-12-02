@@ -34,6 +34,7 @@ data MachineState = MachineState {
     sReg          :: Word8,
     flagReg       :: Word8,
     pcReg         :: Word16,
+    ppuCycleCount :: Int,
     controlReg    :: Word8,
     maskReg       :: Word8,
     statusReg     :: Word8,
@@ -45,7 +46,7 @@ data MachineState = MachineState {
     ppuScrollY    :: Word8,
     ppuScrollDir  :: ScrollDirection,
     ppuDataBuffer :: Word8,
-    scanline      :: Word8,
+    scanline      :: Int,
     nametables    :: Vector Word8,
     palette       :: Vector Word8,
     screen        :: Vector Color
@@ -60,6 +61,7 @@ defaultState = MachineState {
     sReg          = 0xfd,
     flagReg       = unusedMask .|. irqMask,
     pcReg         = 0xc000,
+    ppuCycleCount = 0,
     controlReg    = 0x00,
     maskReg       = 0x00,
     statusReg     = 0x00,
@@ -71,13 +73,14 @@ defaultState = MachineState {
     ppuScrollY    = 0x00,
     ppuScrollDir  = XDirection,
     ppuDataBuffer = 0x00,
-    scanline      = 0x00,
+    scanline      = 0,
     nametables    = vector 2048,
     palette       = vector 32,
     screen        = vector (256 * 240)
 }
 
 addCycles cycles state = state { cycleCount = cycleCount state + cycles }
+addPPUCycles cycles state = state { ppuCycleCount = ppuCycleCount state + cycles }
 
 setRAM           value state = state { ram = value }
 setNametables    value state = state { nametables = value }
@@ -186,7 +189,8 @@ setSpriteOverflow value state = if value then modifyStatusReg (.|. bit 5) state 
 setSpriteZeroHit  value state = if value then modifyStatusReg (.|. bit 6) state else state
 setInVBlank       value state = if value then modifyStatusReg (.|. bit 7) state else state
 
-incOAMAddr :: MachineState -> MachineState
+incScanline state = state { scanline = scanline state + 1 }
+
 incOAMAddr state = state { oamAddr = oamAddr state + 1 }
 
 loadOAMByte :: MachineState -> (Word8, MachineState)

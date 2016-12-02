@@ -1,6 +1,7 @@
 module PPU where
 
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
+import Data.Default (Default(..))
 import Data.Maybe (isJust)
 import Data.Vector.Persistent (Vector, index, update)
 import Data.Word (Word8, Word16)
@@ -19,6 +20,13 @@ data StepResult = StepResult {
     newFrameResult :: Bool, -- We wrapped around to the next scanline.
     scanlineIrqResult :: Bool -- The mapper wants to execute a scanline IRQ.
 }
+
+instance Default StepResult where
+    def = StepResult {
+        vBlankResult = False,
+        newFrameResult = False,
+        scanlineIrqResult = False
+    }
 
 screenHeight      = 240
 -- screenWidth       = 256 -- TOOD: use this constant again. compiler warning about overflow 256::Word8
@@ -121,7 +129,7 @@ getPatternPixel layer tile (x, y) state = do
 getBackgroundPixel :: Word8 -> MachineState -> (Maybe Color, MachineState)
 getBackgroundPixel x state = do
     let x2 = byteToWord x + byteToWord (ppuScrollX state)
-    let y2 = byteToWord (scanline state) + byteToWord (ppuScrollY state)
+    let y2 = fromIntegral (scanline state) + byteToWord (ppuScrollY state)
     let nt = nametableAddr (x2 `shiftR` 3) (y2 `shiftR` 3)
     let ntBase = base nt
     let ntXIndex = byteToWord (xIndex nt)
@@ -149,13 +157,13 @@ getSpritePixel [] _ _ state = (Nothing, state)
 getSpritePixel (Nothing : _) _ _ state = (Nothing, state)
 getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
     let sprite = getSpriteInfo (byteToWord spriteIndex) state
-    if inBoundingBox sprite x (scanline state) state then
+    if inBoundingBox sprite x (fromIntegral (scanline state)) state then
         getSpritePixel rest x opaqueBackground state
     else do
         let tile = case tiles sprite state of -- TODO: 8x16 not implemented
                    Tile8x8 t -> t
                    Tile8x16 t _ -> t
-        let sl = scanline state
+        let sl = fromIntegral (scanline state)
         let x2 = if flipHorizontal sprite then 7 - x + xPosition sprite else x - xPosition sprite
         let y2 = if flipVertical sprite then 7 - sl + yPosition sprite else sl - yPosition sprite
         let (patternColor, stat2) = getPatternPixel SpriteLayer tile (x2, y2) state
@@ -176,7 +184,7 @@ computeVisibleSprites state0 = do
     where recur [] results state = (results, state)
           recur (i : rest) results state = do
             let sprite = getSpriteInfo (byteToWord i) state
-            if onScanline sprite (scanline state) state then
+            if onScanline sprite (fromIntegral (scanline state)) state then
                 if length results < 8 then
                     recur rest (Just i : results) state
                 else
@@ -184,26 +192,19 @@ computeVisibleSprites state0 = do
             else
                 recur rest results state
 
--- TODO: set sprite zero on this frame or the next one?
-startVBlank :: StepResult -> MachineState -> (StepResult, MachineState)
-startVBlank result state = (newResult, newState)
-    where newResult = result { vBlankResult = vBlankNMI state }
-          newState = state |> setInVBlank True |> setSpriteZeroHit False
-
-choosePixel :: Color -> Maybe Color -> Maybe SpriteColor -> Color
-choosePixel baseColor Nothing Nothing = baseColor
-choosePixel _ (Just color) Nothing = color
-choosePixel _ (Just color) (Just (BelowBackground, _)) = color
-choosePixel _ Nothing (Just (BelowBackground, color)) = color
-choosePixel _ _ (Just (_, color)) = color
+blitPixel :: Color -> Maybe Color -> Maybe SpriteColor -> Color
+blitPixel baseColor Nothing Nothing = baseColor
+blitPixel _ (Just color) Nothing = color
+blitPixel _ (Just color) (Just (BelowBackground, _)) = color
+blitPixel _ _ (Just (_, color)) = color
 
 renderPixel :: Color -> [Maybe Word8] -> Word8 -> MachineState -> MachineState
 renderPixel baseColor spriteIndicies x state0 = do
-    let ifFlag s c f = if c s then f s else (Nothing, s)
+    let ifFlag s c f = if c s then f s else (Nothing, s) -- TODO: this is ugly
     let (backgroundColor, state1) = ifFlag state0 showBackground (getBackgroundPixel x)
     let (spriteColor, state2) = ifFlag state1 showSprites (getSpritePixel spriteIndicies x (isJust backgroundColor))
-    let color = choosePixel baseColor backgroundColor spriteColor
-    putPixel (x, scanline state2) color state2
+    let color = blitPixel baseColor backgroundColor spriteColor
+    putPixel (x, fromIntegral (scanline state2)) color state2
 
 -- TODO: scrolling, mirroring
 renderScanline :: MachineState -> MachineState
@@ -212,13 +213,31 @@ renderScanline state0 = do
     let (baseColorIndex, state2) = loadVramByte 0x3f00 state1 |> mapFst (.&. 0x3f)
     let baseColor = colors !! fromIntegral baseColorIndex
     -- TODO: don't recompute tile for every pixel
-    foldr (renderPixel baseColor spriteIndicies) state2 [0 .. 255]
+    addPPUCycles cyclesPerScanline $ foldr (renderPixel baseColor spriteIndicies) state2 [0 .. 255]
 
-nextScanline :: Int -> MachineState -> MachineState
-nextScanline runToCycle state =
-    if runToCycle >= cycleCount state
-        then state
-        else nextScanline (runToCycle - 1) (renderScanline state)
+-- TODO: set sprite zero on this frame or the next one?
+startVBlank :: StepResult -> MachineState -> (StepResult, MachineState)
+startVBlank result state = (newResult, newState)
+    where newResult = result { vBlankResult = vBlankNMI state }
+          newState = state |> setInVBlank True |> setSpriteZeroHit False
 
-step :: MachineState -> MachineState
-step state = nextScanline (cyclesPerScanline + cycleCount state) state
+nextScanline :: Int -> StepResult -> MachineState -> (StepResult, MachineState)
+nextScanline runToCycle result state =
+    if ppuCycleCount state + cyclesPerScanline > runToCycle
+        then (result, state)
+        else do
+            let state1 = if scanline state < screenHeight then renderScanline state else state
+            let state2 = incScanline state1
+            -- TODO: if vram.mapper.next_scanline() == ResultIrq then result.scanline_irq <- True
+            let (result2, state3) = if scanline state2 == vBlankScanline then
+                                        startVBlank result state2
+                                    else if scanline state2 == lastScanline then
+                                        (result { newFrameResult = True }, state2 { scanline = 0 } |> setInVBlank False)
+                                    else
+                                        (result, state2)
+            nextScanline runToCycle result2 state3
+            -- debug_assert!(self.cy % CYCLES_PER_SCANLINE == 0, "at even scanline cycle");
+
+step :: MachineState -> (StepResult, MachineState)
+step state = nextScanline (cycleCount state) def state
+
