@@ -45,11 +45,11 @@ colors = [
     (0xf8, 0xd8, 0x78), (0xd8, 0xf8, 0x78), (0xb8, 0xf8, 0xb8), (0xb8, 0xf8, 0xd8),
     (0x00, 0xfc, 0xfc), (0xf8, 0xd8, 0xf8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00)]
 
-getPixel :: (Int, Int) -> Screen -> Color
-getPixel (x, y) screen = at (x + y * 256) screen
+getPixel :: (Integral i) => (i, i) -> MachineState -> Color
+getPixel (x, y) state = at (fromIntegral x + fromIntegral y * 256) (screen state)
 
 putPixel :: (Integral i) => (i, i) -> Color -> MachineState -> MachineState
-putPixel (x, y) color state = state { screen = update (fromIntegral x + (fromIntegral y) * 256) color (screen state) }
+putPixel (x, y) color state = state { screen = update (fromIntegral x + fromIntegral y * 256) color (screen state) }
 
 spriteHeight :: MachineState -> Word8
 spriteHeight state =
