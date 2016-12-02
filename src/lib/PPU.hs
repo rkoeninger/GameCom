@@ -1,8 +1,9 @@
 module PPU where
 
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
-import Data.Word (Word8, Word16)
+import Data.Maybe (isJust)
 import Data.Vector.Persistent (Vector, index, update)
+import Data.Word (Word8, Word16)
 
 import Base
 import Memory
@@ -19,8 +20,8 @@ data StepResult = StepResult {
     scanlineIrqResult :: Bool -- The mapper wants to execute a scanline IRQ.
 }
 
-screenWidth       = 256
 screenHeight      = 240
+-- screenWidth       = 256 -- TOOD: use this constant again. compiler warning about overflow 256::Word8
 cyclesPerScanline = 114
 vBlankScanline    = 241
 lastScanline      = 261
@@ -47,8 +48,8 @@ colors = [
 getPixel :: (Int, Int) -> Screen -> Color
 getPixel (x, y) screen = at (x + y * 256) screen
 
-putPixel :: (Int, Int) -> Color -> Screen -> Screen
-putPixel (x, y) = update (x + y * 256)
+putPixel :: (Integral i) => (i, i) -> Color -> MachineState -> MachineState
+putPixel (x, y) color state = state { screen = update (fromIntegral x + (fromIntegral y) * 256) color (screen state) }
 
 spriteHeight :: MachineState -> Word8
 spriteHeight state =
@@ -143,9 +144,9 @@ getBackgroundPixel x state = do
         let (paletteIndex, stat5) = loadVramByte (0x3f00 + byteToWord tileColor) stat4
         (Just(colors !! fromIntegral (paletteIndex .&. 0x3f)), stat5)
 
-getSpritePixel :: [Maybe Word8] -> Word8 -> Bool -> MachineState -> (MachineState, Maybe SpriteColor)
-getSpritePixel [] _ _ state = (state, Nothing)
-getSpritePixel (Nothing : _) _ _ state = (state, Nothing)
+getSpritePixel :: [Maybe Word8] -> Word8 -> Bool -> MachineState -> (Maybe SpriteColor, MachineState)
+getSpritePixel [] _ _ state = (Nothing, state)
+getSpritePixel (Nothing : _) _ _ state = (Nothing, state)
 getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
     let sprite = getSpriteInfo (byteToWord spriteIndex) state
     if inBoundingBox sprite x (scanline state) state then
@@ -165,7 +166,7 @@ getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
             let tileColor = (spritePalette sprite `shiftL` 2) .|. patternColor
             let (paletteIndex, stat4) = loadVramByte (0x3f00 + byteToWord tileColor) stat3
             let finalColor = colors !! fromIntegral (paletteIndex .&. 0x3f)
-            (stat4, Just (priority sprite, finalColor))
+            (Just (priority sprite, finalColor), stat4)
 
 computeVisibleSprites :: MachineState -> ([Maybe Word8], MachineState)
 computeVisibleSprites state0 = do
@@ -189,8 +190,29 @@ startVBlank result state = (newResult, newState)
     where newResult = result { vBlankResult = vBlankNMI state }
           newState = state |> setInVBlank True |> setSpriteZeroHit False
 
+choosePixel :: Color -> Maybe Color -> Maybe SpriteColor -> Color
+choosePixel baseColor Nothing Nothing = baseColor
+choosePixel _ (Just color) Nothing = color
+choosePixel _ (Just color) (Just (BelowBackground, _)) = color
+choosePixel _ Nothing (Just (BelowBackground, color)) = color
+choosePixel _ _ (Just (_, color)) = color
+
+renderPixel :: Color -> [Maybe Word8] -> Word8 -> MachineState -> MachineState
+renderPixel baseColor spriteIndicies x state0 = do
+    let ifFlag s c f = if c s then f s else (Nothing, s)
+    let (backgroundColor, state1) = ifFlag state0 showBackground (getBackgroundPixel x)
+    let (spriteColor, state2) = ifFlag state1 showSprites (getSpritePixel spriteIndicies x (isJust backgroundColor))
+    let color = choosePixel baseColor backgroundColor spriteColor
+    putPixel (x, scanline state2) color state2
+
+-- TODO: scrolling, mirroring
 renderScanline :: MachineState -> MachineState
-renderScanline = id
+renderScanline state0 = do
+    let (spriteIndicies, state1) = computeVisibleSprites state0
+    let (baseColorIndex, state2) = loadVramByte 0x3f00 state1 |> mapFst (.&. 0x3f)
+    let baseColor = colors !! fromIntegral baseColorIndex
+    -- TODO: don't recompute tile for every pixel
+    foldr (renderPixel baseColor spriteIndicies) state2 [0 .. 255]
 
 nextScanline :: Int -> MachineState -> MachineState
 nextScanline runToCycle state =
