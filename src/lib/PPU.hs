@@ -194,9 +194,9 @@ computeVisibleSprites state0 = do
 
 blitPixel :: Color -> Maybe Color -> Maybe SpriteColor -> Color
 blitPixel baseColor Nothing Nothing = baseColor
-blitPixel _ (Just color) Nothing = color
-blitPixel _ (Just color) (Just (BelowBackground, _)) = color
-blitPixel _ _ (Just (_, color)) = color
+blitPixel _ (Just backgroundColor) Nothing = backgroundColor
+blitPixel _ (Just backgroundColor) (Just (BelowBackground, _)) = backgroundColor
+blitPixel _ _ (Just (_, spriteColor)) = spriteColor
 
 renderPixel :: Color -> [Maybe Word8] -> Word8 -> MachineState -> MachineState
 renderPixel baseColor spriteIndicies x state0 = do

@@ -22,10 +22,9 @@ loadWordIncPc = transfer pcReg loadWord
             >>> mapSnd (modifyPCReg (+ 2))
 
 loadWordZeroPage :: Word16 -> MachineState -> (Word16, MachineState)
-loadWordZeroPage addr state = do
-    let (b0, st2) = loadByte addr state
-    let (b1, st3) = loadByte (addr + 1) st2 -- TODO : use composition operators
-    (bytesToWord b0 b1, st3)
+loadWordZeroPage addr = loadByte addr
+                    >>| loadByte (addr + 1)
+                    >>. mapFst (uncurry bytesToWord)
 
 pushByte :: Word8 -> MachineState -> MachineState
 pushByte val state = storeByte (0x0100 + byteToWord (sReg state)) val state
@@ -109,9 +108,9 @@ iiyMode state = do
     let val3 = val2 + byteToWord (yReg stat3)
     (memoryMode val3, stat3)
 
-lda (loader, _) = loader >>> uncurry setAReg
-ldx (loader, _) = loader >>> uncurry setXReg
-ldy (loader, _) = loader >>> uncurry setYReg
+lda (loader, _) = loader >>* setAReg
+ldx (loader, _) = loader >>* setXReg
+ldy (loader, _) = loader >>* setYReg
 sta (_, storer) = transfer aReg storer
 stx (_, storer) = transfer xReg storer
 sty (_, storer) = transfer yReg storer
@@ -144,9 +143,9 @@ cmp = comp aReg
 cpx = comp xReg
 cpy = comp yReg
 
-add (loader, _) = loader >>> mapFst (.&.) >>> uncurry modifyAReg
-ora (loader, _) = loader >>> mapFst (.|.) >>> uncurry modifyAReg
-eor (loader, _) = loader >>> mapFst  xor  >>> uncurry modifyAReg
+add (loader, _) = loader >>. mapFst (.&.) >>* modifyAReg
+ora (loader, _) = loader >>. mapFst (.|.) >>* modifyAReg
+eor (loader, _) = loader >>. mapFst  xor  >>* modifyAReg
 
 bit (loader, _) stat2 = do
     let (val, state) = loader stat2
@@ -216,7 +215,7 @@ bcs = branch carryFlag
 beq = branch zeroFlag
 
 jmp _ = loadWordIncPc
-    >>> uncurry setPCReg
+    >>* setPCReg
 
 -- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
 jpi _ state = do
@@ -230,29 +229,29 @@ jsr _ stat2 = do
     setPCReg addr $ pushWord (pcReg state - 1) state
 
 rts _ = popWord
-    >>> mapFst (+ 1)
-    >>> uncurry setPCReg
+    >>. mapFst (+ 1)
+    >>* setPCReg
 
 brk _ = transfer ((+ 1) . pcReg) pushWord
-    >>> transfer ((.|. breakMask) . flagReg) pushByte
-    >>> setIRQFlag True
-    >>> loadWord breakVector
-    >>> uncurry setPCReg
+    >>. transfer ((.|. breakMask) . flagReg) pushByte
+    >>. setIRQFlag True
+    >>. loadWord breakVector
+    >>* setPCReg
 
 rti _ = popByte
-    >>> uncurry setFlagReg
-    >>> popWord
-    >>> uncurry setPCReg
+    >>* setFlagReg
+    >>. popWord
+    >>* setPCReg
 
 pha _ = transfer aReg pushByte
 
 pla _ = popByte
-    >>> uncurry setAReg
+    >>* setAReg
 
 php _ = transfer ((.|. breakMask) . flagReg) pushByte
 
 plp _ = popByte
-    >>> uncurry setFlagReg
+    >>* setFlagReg
 
 nop _ = id
 
@@ -260,17 +259,18 @@ nmiVector   = 0xfffa :: Word16
 resetVector = 0xfffc :: Word16
 breakVector = 0xfffe :: Word16
 
-reset = loadWord resetVector >>> uncurry setPCReg
+reset = loadWord resetVector
+    >>* setPCReg
 
 nmi = transfer pcReg pushWord
-  >>> transfer flagReg pushByte
-  >>> loadWord nmiVector
-  >>> uncurry setPCReg
+  >>. transfer flagReg pushByte
+  >>. loadWord nmiVector
+  >>* setPCReg
 
 irt = transfer pcReg pushWord
-  >>> transfer flagReg pushByte
-  >>> loadWord breakVector
-  >>> uncurry setPCReg
+  >>. transfer flagReg pushByte
+  >>. loadWord breakVector
+  >>* setPCReg
 
 irq state =
     if irqFlag state
@@ -278,12 +278,12 @@ irq state =
         else irt state
 
 step :: MachineState -> MachineState
-step = uncurry eval . loadByteIncPc
+step = loadByteIncPc >>* eval
 
 eval :: Word8 -> MachineState -> MachineState
 eval opCode = builder
-          >>> uncurry op
-          >>> addCycles cycles
+          >>* op
+          >>. addCycles cycles
     where (op, builder, cycles) = decode opCode
 
 decode :: Word8 -> (Operation, AddresserBuilder, Int)

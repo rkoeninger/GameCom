@@ -14,11 +14,6 @@ at i v = case index v (fromIntegral i) of
 vector :: Default d => Int -> Vector d
 vector n = P.fromList (replicate n def)
 
-(|>) :: a -> (a -> b) -> b
-(|>) x f = f x
-
-infixl 1 |>
-
 mapFst :: (a -> b) -> (a, c) -> (b, c)
 mapFst f (x, y) = (f x, y)
 
@@ -27,6 +22,26 @@ mapSnd f (x, y) = (x, f y)
 
 transfer :: (a -> b) -> (b -> a -> c) -> a -> c
 transfer from to state = to (from state) state
+
+(|>) :: a -> (a -> b) -> b
+(|>) x f = f x
+
+(>>.) :: (a -> b) -> (b -> c) -> (a -> c)
+(>>.) f g = g . f
+
+(>>*) :: (a -> (b, c)) -> (b -> c -> d) -> a -> d
+(>>*) f g = uncurry g . f
+
+(>>|) :: (s -> (a, s)) -> (s -> (b, s)) -> s -> ((a, b), s)
+(>>|) f g s0 = do
+    let (x, s1) = f s0
+    let (y, s2) = g s1
+    ((x, y), s2)
+
+infixl 0 |>
+infixl 1 >>.
+infixl 1 >>|
+infixl 1 >>*
 
 byteToWord :: Word8 -> Word16
 byteToWord = fromIntegral

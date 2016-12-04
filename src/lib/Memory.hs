@@ -202,7 +202,7 @@ storeOAMByte value state = (incOAMAddr state) { oamData = storeByte (byteToWord 
 dmaTransfer :: Word8 -> MachineState -> MachineState
 dmaTransfer value state = do
     let start = byteToWord value `shiftL` 8
-    let copy addr = loadByte addr >>> uncurry storeOAMByte
+    let copy addr = loadByte addr >>* storeOAMByte
     foldr copy state [start .. start + 255]
 
 storePPUAddrByte :: Word8 -> MachineState -> MachineState
@@ -254,11 +254,9 @@ class Storage m where
     loadByte :: Word16 -> m -> (Word8, m)
 
     loadWord :: Word16 -> m -> (Word16, m)
-    loadWord addr storage = (bytesToWord b0 b1, s3) -- TODO : use composition operators?
-        where (b0, s2) = loadByte addr storage
-              (b1, s3) = loadByte (addr + 1) s2
-
-    --loadWord addr = loadByte addr >>> loadByte (addr + 1) >>> mapFst (uncurry bytesToWord)
+    loadWord addr = loadByte addr
+                >>| loadByte (addr + 1)
+                >>. mapFst (uncurry bytesToWord)
 
     storeByte :: Word16 -> Word8 -> m -> m
 
