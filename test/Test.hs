@@ -47,14 +47,13 @@ testMemory = describe "Memory" $ do
 
 arithmeticScenario a val carry f = do
     let opCode = case f 2 1 of
-                 3 -> 0x65 -- adc/zpg
-                 1 -> 0xe5 -- sbc/zpg
+                 3 -> 0x69 -- adc/imd
+                 1 -> 0xe9 -- sbc/imd
     defaultState
         |> setAReg a
         |> setCarryFlag carry
-        |> storeByte 0x00 val
         |> storeByte 0x10 opCode
-        |> storeByte 0x11 0x00
+        |> storeByte 0x11 val
         |> setPCReg 0x0010
         |> CPU.step
 
@@ -126,9 +125,8 @@ testArithmetic = describe "Arithmetic" $ do
 compareScenario a val =
     defaultState
         |> setAReg a
-        |> storeByte 0x00 val
-        |> storeByte 0x10 0xc5 -- cmp/zpg
-        |> storeByte 0x11 0x00
+        |> storeByte 0x10 0xc9 -- cmp/imd
+        |> storeByte 0x11 val
         |> setPCReg 0x0010
         |> CPU.step
 
