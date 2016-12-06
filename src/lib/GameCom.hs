@@ -1,7 +1,5 @@
 module GameCom where
 
-import Control.Arrow ((>>>))
-
 import Base
 import Memory
 import ROM
@@ -10,4 +8,12 @@ import qualified PPU
 import qualified APU
 
 step :: MachineState -> MachineState
-step = CPU.step >>> PPU.step >>> snd >>> APU.step
+step s0 = do
+	let s1 = CPU.step s0
+	let (r, s2) = PPU.step s1
+	if PPU.vBlankResult r then
+		CPU.nmi s2
+	else if PPU.scanlineIrqResult r then
+		CPU.irq s2
+	else
+		s2

@@ -1,4 +1,4 @@
-module CPU (step) where
+module CPU (step, nmi, irq) where
 
 import Control.Arrow ((>>>))
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)

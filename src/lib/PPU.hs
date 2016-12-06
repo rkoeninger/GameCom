@@ -1,4 +1,4 @@
-module PPU where
+module PPU (step, StepResult(..)) where
 
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
 import Data.Default (Default(..))
