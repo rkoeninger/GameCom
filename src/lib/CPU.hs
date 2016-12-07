@@ -108,78 +108,78 @@ iiyMode state = do
     let val3 = val2 + byteToWord (yReg stat3)
     (memoryMode val3, stat3)
 
-lda (loader, _) = loader >>* setAReg
-ldx (loader, _) = loader >>* setXReg
-ldy (loader, _) = loader >>* setYReg
-sta (_, storer) = transfer aReg storer
-stx (_, storer) = transfer xReg storer
-sty (_, storer) = transfer yReg storer
+lda (load, _) = load >>* setAReg
+ldx (load, _) = load >>* setXReg
+ldy (load, _) = load >>* setYReg
+sta (_, store) = transfer aReg store
+stx (_, store) = transfer xReg store
+sty (_, store) = transfer yReg store
 
-adc (loader, _) stat2 = do
-    let (val, state) = loader stat2
+adc (load, _) stat2 = do
+    let (val, state) = load stat2
     let a = aReg state
     let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
     let resultByte = wordToByte resultWord
     let carry = testBit resultWord 8
     let overflow = (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
-    setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
+    state |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
 
-sbc (loader, _) stat2 = do
-    let (val, state) = loader stat2
+sbc (load, _) stat2 = do
+    let (val, state) = load stat2
     let a = aReg state
     let resultWord = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
     let resultByte = wordToByte resultWord
     let carry = not $ testBit resultWord 8
     let overflow = (testBit a 7 /= testBit val 7) && (testBit a 7 /= testBit resultByte 7)
-    setAReg resultByte $ setCarryFlag carry $ setOverflowFlag overflow state
+    state |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
 
 comp :: (MachineState -> Word8) -> Operation
-comp reg (loader, _) stat2 = do
-    let (val, state) = loader stat2
+comp reg (load, _) stat2 = do
+    let (val, state) = load stat2
     let result = byteToWord (reg state) - byteToWord val
-    setZN (wordToByte result) $ setCarryFlag (testBit result 8) state
+    state |> setZN (wordToByte result) |> setCarryFlag (testBit result 8)
 
 cmp = comp aReg
 cpx = comp xReg
 cpy = comp yReg
 
-add (loader, _) = loader >>. mapFst (.&.) >>* modifyAReg
-ora (loader, _) = loader >>. mapFst (.|.) >>* modifyAReg
-eor (loader, _) = loader >>. mapFst  xor  >>* modifyAReg
+add (load, _) = load >>. mapFst (.&.) >>* modifyAReg
+ora (load, _) = load >>. mapFst (.|.) >>* modifyAReg
+eor (load, _) = load >>. mapFst  xor  >>* modifyAReg
 
-bit (loader, _) stat2 = do
-    let (val, state) = loader stat2
+bit (load, _) stat2 = do
+    let (val, state) = load stat2
     let zero = val .&. aReg state == 0
     let overflow = testBit val overflowBit
     let negative = testBit val negativeBit
-    setOverflowFlag overflow $ setNegativeFlag negative $ setZeroFlag zero state
+    state |> setOverflowFlag overflow |> setNegativeFlag negative |> setZeroFlag zero
 
 shiftLeft :: Bool -> Operation
-shiftLeft lsb (loader, storer) stat2 = do
-    let (val, state) = loader stat2
+shiftLeft lsb (load, store) stat2 = do
+    let (val, state) = load stat2
     let carry = testBit val 7
     let result = val `shiftL` 1 .|. (if lsb && carryFlag state then 0x01 else 0x00)
-    storer result $ setZN result $ setCarryFlag carry state
+    state |> setZN result |> setCarryFlag carry |> store result
 
 shiftRight :: Bool -> Operation
-shiftRight msb (loader, storer) stat2 = do
-    let (val, state) = loader stat2
+shiftRight msb (load, store) stat2 = do
+    let (val, state) = load stat2
     let carry = testBit val 0
     let result = val `shiftR` 1 .|. (if msb && carryFlag state then 0x80 else 0x00)
-    storer result $ setZN result $ setCarryFlag carry state
+    state |> setZN result |> setCarryFlag carry |> store result
 
 rol = shiftLeft  True
 ror = shiftRight True
 asl = shiftLeft  False
 lsr = shiftRight False
 
-inc (loader, storer) stat2 = do
-    let (val, state) = loader stat2 |> mapFst (+ 1)
-    storer val $ setZN val state
+inc (load, store) stat2 = do
+    let (val, state) = load stat2 |> mapFst (+ 1)
+    state |> setZN val |> store val
 
-dec (loader, storer) stat2 = do
-    let (val, state) = loader stat2 |> mapFst (subtract 1)
-    storer val $ setZN val state
+dec (load, store) stat2 = do
+    let (val, state) = load stat2 |> mapFst (subtract 1)
+    state |> setZN val |> store val
 
 inx _ = modifyXReg (+ 1)
 dex _ = modifyXReg (subtract 1)
@@ -200,10 +200,7 @@ cld _ = setDecimalFlag  False -- NOTE: decimal flag isn't used since BCD command
 sed _ = setDecimalFlag  True
 
 branch :: (MachineState -> Bool) -> Operation
-branch condf _ state =
-    if condf state
-        then uncurry modifyPCReg $ mapFst ((+) . byteToWord) $ loadByteIncPc state
-        else state
+branch condf _ = ifs condf (loadByteIncPc >>. mapFst ((+) . byteToWord) >>* modifyPCReg) id
 
 bpl = branch $ not . negativeFlag
 bvc = branch $ not . overflowFlag
@@ -226,7 +223,7 @@ jpi _ state = do
 
 jsr _ stat2 = do
     let (addr, state) = loadWordIncPc stat2
-    setPCReg addr $ pushWord (pcReg state - 1) state
+    state |> pushWord (pcReg state - 1) |> setPCReg addr
 
 rts _ = popWord
     >>. mapFst (+ 1)
@@ -272,13 +269,11 @@ irt = transfer pcReg pushWord
   >>. loadWord breakVector
   >>* setPCReg
 
-irq state =
-    if irqFlag state
-        then state
-        else irt state
+irq = ifs irqFlag id irt
 
 step :: MachineState -> MachineState
-step = loadByteIncPc >>* eval
+step = loadByteIncPc
+   >>* eval
 
 eval :: Word8 -> MachineState -> MachineState
 eval opCode = builder

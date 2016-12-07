@@ -23,6 +23,12 @@ mapSnd f (x, y) = (x, f y)
 transfer :: (a -> b) -> (b -> a -> c) -> a -> c
 transfer from to state = to (from state) state
 
+ifs :: (a -> Bool) -> (a -> b) -> (a -> b) -> a -> b
+ifs condition consequent alternative x =
+    if condition x
+        then consequent x
+        else alternative x
+
 (|>) :: a -> (a -> b) -> b
 (|>) x f = f x
 

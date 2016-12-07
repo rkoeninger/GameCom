@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 module PPU (step, StepResult(..)) where
 
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
@@ -163,9 +165,9 @@ getSpritePixel (Just spriteIndex : rest) x opaqueBackground state = do
         let tile = case tiles sprite state of -- TODO: 8x16 not implemented
                    Tile8x8 t -> t
                    Tile8x16 t _ -> t
-        let sl = fromIntegral (scanline state)
-        let x2 = if flipHorizontal sprite then 7 - x + xPosition sprite else x - xPosition sprite
-        let y2 = if flipVertical sprite then 7 - sl + yPosition sprite else sl - yPosition sprite
+        let y = fromIntegral (scanline state)
+        let x2 = ifs flipHorizontal ((+ (7 - x)) . xPosition) (subtract x . xPosition) sprite
+        let y2 = ifs flipVertical   ((+ (7 - y)) . yPosition) (subtract y . yPosition) sprite
         let (patternColor, stat2) = getPatternPixel SpriteLayer tile (x2, y2) state
         if patternColor == 0 then
             getSpritePixel rest x opaqueBackground state
@@ -194,16 +196,15 @@ computeVisibleSprites state0 = do
 
 blitPixel :: Color -> Maybe Color -> Maybe SpriteColor -> Color
 blitPixel baseColor Nothing Nothing = baseColor
-blitPixel _ (Just backgroundColor) Nothing = backgroundColor
-blitPixel _ (Just backgroundColor) (Just (BelowBackground, _)) = backgroundColor
-blitPixel _ _ (Just (_, spriteColor)) = spriteColor
+blitPixel _ (Just bgColor) Nothing = bgColor
+blitPixel _ (Just bgColor) (Just (BelowBackground, _)) = bgColor
+blitPixel _ _ (Just (_, spColor)) = spColor
 
 renderPixel :: Color -> [Maybe Word8] -> Word8 -> MachineState -> MachineState
 renderPixel baseColor spriteIndicies x state0 = do
-    let ifFlag s c f = if c s then f s else (Nothing, s) -- TODO: this is ugly
-    let (backgroundColor, state1) = ifFlag state0 showBackground (getBackgroundPixel x)
-    let (spriteColor, state2) = ifFlag state1 showSprites (getSpritePixel spriteIndicies x (isJust backgroundColor))
-    let color = blitPixel baseColor backgroundColor spriteColor
+    let (bgColor, state1) = ifs showBackground (getBackgroundPixel x) (Nothing,) state0
+    let (spColor, state2) = ifs showSprites (getSpritePixel spriteIndicies x (isJust bgColor)) (Nothing,) state1
+    let color = blitPixel baseColor bgColor spColor
     putPixel (x, fromIntegral (scanline state2)) color state2
 
 -- TODO: scrolling, mirroring
@@ -226,8 +227,7 @@ nextScanline runToCycle result state =
     if ppuCycleCount state + cyclesPerScanline > runToCycle
         then (result, state)
         else do
-            let state1 = if scanline state < screenHeight then renderScanline state else state
-            let state2 = incScanline state1
+            let state2 = ifs ((< screenHeight) . scanline) renderScanline id state |> incScanline
             -- TODO: if vram.mapper.next_scanline() == ResultIrq then result.scanline_irq <- True
             let (result2, state3) = if scanline state2 == vBlankScanline then
                                         startVBlank result state2
