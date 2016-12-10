@@ -206,7 +206,7 @@ storeOAMByte value state = (incOAMAddr state) { oamData = storeByte (byteToWord 
 dmaTransfer :: Word8 -> MachineState -> MachineState
 dmaTransfer value state = do
     let start = byteToWord value `shiftL` 8
-    let copy addr = loadByte addr >>* storeOAMByte
+    let copy addr = loadByte addr *>> storeOAMByte
     foldr copy state [start .. start + 255]
 
 storePPUAddrByte :: Word8 -> MachineState -> MachineState
@@ -259,8 +259,8 @@ class Storage m where
 
     loadWord :: Word16 -> m -> (Word16, m)
     loadWord addr = loadByte addr
-                >>| loadByte (addr + 1)
-                >>. mapFst (uncurry bytesToWord)
+                $>> loadByte (addr + 1)
+                .>> mapFst (uncurry bytesToWord)
 
     storeByte :: Word16 -> Word8 -> m -> m
 

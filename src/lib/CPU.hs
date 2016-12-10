@@ -23,8 +23,8 @@ loadWordIncPc = transfer pcReg loadWord
 
 loadWordZeroPage :: Word16 -> MachineState -> (Word16, MachineState)
 loadWordZeroPage addr = loadByte addr
-                    >>| loadByte (addr + 1)
-                    >>. mapFst (uncurry bytesToWord)
+                    $>> loadByte (addr + 1)
+                    .>> mapFst (uncurry bytesToWord)
 
 pushByte :: Word8 -> MachineState -> MachineState
 pushByte val state = storeByte (0x0100 + byteToWord (sReg state)) val state
