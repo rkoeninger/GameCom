@@ -1,4 +1,4 @@
-module CPU (step, nmi, irq) where
+module CPU (step, nmi, irq, pushWord, pushByte, popWord, popByte) where
 
 import Control.Arrow ((>>>))
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
@@ -108,12 +108,12 @@ iiyMode state = do
     let val3 = val2 + byteToWord (yReg stat3)
     (memoryMode val3, stat3)
 
-lda (load, _) = load >>* setAReg
-ldx (load, _) = load >>* setXReg
-ldy (load, _) = load >>* setYReg
-sta (_, store) = transfer aReg store
-stx (_, store) = transfer xReg store
-sty (_, store) = transfer yReg store
+lda (load, _)  = load *>> setAReg
+ldx (load, _)  = load *>> setXReg
+ldy (load, _)  = load *>> setYReg
+sta (_, store) = aReg ->> store
+stx (_, store) = xReg ->> store
+sty (_, store) = yReg ->> store
 
 adc (load, _) stat2 = do
     let (val, state) = load stat2
@@ -143,9 +143,9 @@ cmp = comp aReg
 cpx = comp xReg
 cpy = comp yReg
 
-add (load, _) = load >>. mapFst (.&.) >>* modifyAReg
-ora (load, _) = load >>. mapFst (.|.) >>* modifyAReg
-eor (load, _) = load >>. mapFst  xor  >>* modifyAReg
+add (load, _) = load .>> mapFst (.&.) *>> modifyAReg
+ora (load, _) = load .>> mapFst (.|.) *>> modifyAReg
+eor (load, _) = load .>> mapFst  xor  *>> modifyAReg
 
 bit (load, _) stat2 = do
     let (val, state) = load stat2
@@ -185,12 +185,12 @@ inx _ = modifyXReg (+ 1)
 dex _ = modifyXReg (subtract 1)
 iny _ = modifyYReg (+ 1)
 dey _ = modifyYReg (subtract 1)
-tax _ = transfer aReg setXReg
-tay _ = transfer aReg setYReg
-txa _ = transfer xReg setAReg
-tya _ = transfer yReg setAReg
-txs _ = transfer xReg setSReg
-tsx _ = transfer sReg setXReg
+tax _ = aReg ->> setXReg
+tay _ = aReg ->> setYReg
+txa _ = xReg ->> setAReg
+tya _ = yReg ->> setAReg
+txs _ = xReg ->> setSReg
+tsx _ = sReg ->> setXReg
 clc _ = setCarryFlag    False
 sec _ = setCarryFlag    True
 cli _ = setIRQFlag      False
@@ -200,7 +200,7 @@ cld _ = setDecimalFlag  False -- NOTE: decimal flag isn't used since BCD command
 sed _ = setDecimalFlag  True
 
 branch :: (MachineState -> Bool) -> Operation
-branch condf _ = ifs condf (loadByteIncPc >>. mapFst ((+) . byteToWord) >>* modifyPCReg) id
+branch condf _ = ifs condf (loadByteIncPc .>> mapFst ((+) . byteToWord) *>> modifyPCReg) id
 
 bpl = branch $ not . negativeFlag
 bvc = branch $ not . overflowFlag
@@ -212,7 +212,7 @@ bcs = branch carryFlag
 beq = branch zeroFlag
 
 jmp _ = loadWordIncPc
-    >>* setPCReg
+    *>> setPCReg
 
 -- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
 jpi _ state = do
@@ -226,59 +226,66 @@ jsr _ stat2 = do
     state |> pushWord (pcReg state - 1) |> setPCReg addr
 
 rts _ = popWord
-    >>. mapFst (+ 1)
-    >>* setPCReg
+    .>> mapFst (+ 1)
+    *>> setPCReg
 
-brk _ = transfer ((+ 1) . pcReg) pushWord
-    >>. transfer ((.|. breakMask) . flagReg) pushByte
-    >>. setIRQFlag True
-    >>. loadWord breakVector
-    >>* setPCReg
+brk _ = pcReg
+    .>> (+) 1
+    ->> pushWord
+    .>> flagReg
+    .>> (.|.) breakMask
+    ->> pushByte
+    .>> setIRQFlag True
+    .>> loadWord breakVector
+    *>> setPCReg
 
 rti _ = popByte
-    >>* setFlagReg
-    >>. popWord
-    >>* setPCReg
+    *>> setFlagReg
+    .>> popWord
+    *>> setPCReg
 
-pha _ = transfer aReg pushByte
+pha _ = aReg
+    ->> pushByte
 
 pla _ = popByte
-    >>* setAReg
+    *>> setAReg
 
-php _ = transfer ((.|. breakMask) . flagReg) pushByte
+php _ = flagReg
+    .>> (.|.) breakMask
+    ->> pushByte
 
 plp _ = popByte
-    >>* setFlagReg
+    *>> setFlagReg
 
 nop _ = id
 
-nmiVector   = 0xfffa :: Word16
-resetVector = 0xfffc :: Word16
-breakVector = 0xfffe :: Word16
-
 reset = loadWord resetVector
-    >>* setPCReg
+    *>> setPCReg
 
-nmi = transfer pcReg pushWord
-  >>. transfer flagReg pushByte
-  >>. loadWord nmiVector
-  >>* setPCReg
+nmi = pcReg
+  ->> pushWord
+  .>> flagReg
+  ->> pushByte
+  .>> loadWord nmiVector
+  *>> setPCReg
 
-irt = transfer pcReg pushWord
-  >>. transfer flagReg pushByte
-  >>. loadWord breakVector
-  >>* setPCReg
+irt = pcReg
+  ->> pushWord
+  .>> flagReg
+  ->> pushByte
+  .>> loadWord breakVector
+  *>> setPCReg
 
 irq = ifs irqFlag id irt
 
 step :: MachineState -> MachineState
 step = loadByteIncPc
-   >>* eval
+   *>> eval
 
 eval :: Word8 -> MachineState -> MachineState
 eval opCode = builder
-          >>* op
-          >>. addCycles cycles
+          *>> op
+          .>> addCycles cycles
     where (op, builder, cycles) = decode opCode
 
 decode :: Word8 -> (Operation, AddresserBuilder, Int)

@@ -32,8 +32,15 @@ ifs condition consequent alternative x =
 (|>) :: a -> (a -> b) -> b
 (|>) x f = f x
 
+(->>) :: (a -> b) -> (b -> a -> c) -> a -> c
+(->>) f g = transfer f g
+
 (>>.) :: (a -> b) -> (b -> c) -> (a -> c)
 (>>.) f g = g . f
+
+(.>>) = (>>.)
+
+(*>>) = (>>*)
 
 (>>*) :: (a -> (b, c)) -> (b -> c -> d) -> a -> d
 (>>*) f g = uncurry g . f
@@ -45,6 +52,9 @@ ifs condition consequent alternative x =
     ((x, y), s2)
 
 infixl 0 |>
+infixl 1 ->>
+infixl 1 .>>
+infixl 1 *>>
 infixl 1 >>.
 infixl 1 >>|
 infixl 1 >>*

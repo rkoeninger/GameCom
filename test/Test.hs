@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad (forM_)
+import Data.Bits ((.|.), (.&.), complement)
 import qualified Data.ByteString as B
 import Test.Hspec
 
@@ -10,7 +11,18 @@ import qualified CPU
 import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
 import GameCom
 
-aRegIs x state = it ("accumulator should be " ++ show x) $ aReg state `shouldBe` x
+stackIs xs state = search 0 xs state
+    where search _ [] _ = return ()
+          search i (x : xs) s0 =
+              let (b, s1) = CPU.popByte s0 in
+                  it "" (b `shouldBe` x) >> search (i + 1) xs s1
+
+pcRegIs   x state = it ("program counter should be " ++ show x) $ pcReg   state `shouldBe` x
+flagRegIs x state = it ("flag register should be "   ++ show x) $ flagReg state `shouldBe` x
+aRegIs    x state = it ("accumulator should be "     ++ show x) $ aReg    state `shouldBe` x
+xRegIs    x state = it ("x register should be "      ++ show x) $ xReg    state `shouldBe` x
+yRegIs    x state = it ("y register should be "      ++ show x) $ yReg    state `shouldBe` x
+sRegIs    x state = it ("stack pointer should be"    ++ show x) $ sReg    state `shouldBe` x
 
 negativeFlagIs x state = it ("negative flag should be " ++ show x) $ negativeFlag state `shouldBe` x
 overflowFlagIs x state = it ("overflow flag should be " ++ show x) $ overflowFlag state `shouldBe` x
@@ -243,6 +255,57 @@ testShift = describe "Shift" $ do
         zeroFlagIs False state
         negativeFlagIs False state
 
+testStack = describe "Stack Operations" $ do
+    context "pla" $ do
+        let state = defaultState
+                    |> CPU.pushByte 0x7e
+                    |> storeByte 0x10 0x68 -- pla
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        aRegIs 0x7e state
+
+    context "plp" $ do
+        let state = defaultState
+                    |> CPU.pushByte 0x34
+                    |> storeByte 0x10 0x28 -- plp
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
+
+    context "pha" $ do
+        let state = defaultState
+                    |> setAReg 0x7e
+                    |> storeByte 0x10 0x48 -- pha
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        stackIs [0x7e] state
+
+    context "php" $ do
+        let state = defaultState
+                    |> setFlagReg 0x34
+                    |> storeByte 0x10 0x08 -- php
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        stackIs [0x34 .|. unusedMask] state
+
+    context "rts" $ do
+        let state = defaultState
+                    |> CPU.pushWord 0x1234
+                    |> storeByte 0x10 0x60 -- rts
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        pcRegIs 0x1235 state
+
+    context "rti" $ do
+        let state = defaultState
+                    |> CPU.pushWord 0x1234
+                    |> CPU.pushByte 0x34
+                    |> storeByte 0x10 0x40 -- rti
+                    |> setPCReg 0x0010
+                    |> CPU.step
+        pcRegIs 0x1234 state
+        flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
+
 main = hspec $ do
     testROM
     testMemory
@@ -250,3 +313,4 @@ main = hspec $ do
     testComparisons
     testRotate
     testShift
+    testStack

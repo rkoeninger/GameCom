@@ -9,6 +9,10 @@ import Data.Word (Word8, Word16)
 
 import Base
 
+nmiVector   = 0xfffa :: Word16
+resetVector = 0xfffc :: Word16
+breakVector = 0xfffe :: Word16
+
 data Sprite = Sprite {
     xPosition :: Word8,
     yPosition :: Word8,
