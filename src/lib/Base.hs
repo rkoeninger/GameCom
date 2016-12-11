@@ -33,9 +33,9 @@ ifs condition consequent alternative x =
 (|>) x f = f x
 
 (->>) :: (a -> b) -> (b -> a -> c) -> a -> c
-(->>) f g = transfer f g
+(->>) = transfer
 
-(.>>) :: (a -> b) -> (b -> c) -> (a -> c)
+(.>>) :: (a -> b) -> (b -> c) -> a -> c
 (.>>) f g = g . f
 
 (*>>) :: (a -> (b, c)) -> (b -> c -> d) -> a -> d

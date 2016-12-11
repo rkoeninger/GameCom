@@ -1,4 +1,4 @@
-module CPU (step, nmi, irq, pushWord, pushByte, popWord, popByte) where
+module CPU (step, nmi, irq, pushWord, pushByte, pullWord, pullByte) where
 
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
@@ -22,9 +22,9 @@ loadWordIncPc = pcReg
             ->> loadWord
             .>> mapSnd (modifyPCReg (+ 2))
 
-loadWordZeroPage :: Word16 -> MachineState -> (Word16, MachineState)
-loadWordZeroPage addr = loadByte addr
-                    $>> loadByte (addr + 1)
+loadWordZeroPage :: Word8 -> MachineState -> (Word16, MachineState)
+loadWordZeroPage addr = loadByte (byteToWord addr)
+                    $>> loadByte (byteToWord addr + 1)
                     .>> mapFst (uncurry bytesToWord)
 
 pushByte :: Word8 -> MachineState -> MachineState
@@ -35,12 +35,12 @@ pushWord :: Word16 -> MachineState -> MachineState
 pushWord val state = storeWord (0x0100 + byteToWord (sReg state - 1)) val state
                   |> modifySReg (subtract 2)
 
-popByte :: MachineState -> (Word8, MachineState)
-popByte state = loadByte (0x0101 + byteToWord (sReg state)) state
+pullByte :: MachineState -> (Word8, MachineState)
+pullByte state = loadByte (0x0101 + byteToWord (sReg state)) state
              |> mapSnd (modifySReg (+ 1))
 
-popWord :: MachineState -> (Word16, MachineState)
-popWord state = loadWord (0x0101 + byteToWord (sReg state)) state
+pullWord :: MachineState -> (Word16, MachineState)
+pullWord state = loadWord (0x0101 + byteToWord (sReg state)) state
              |> mapSnd (modifySReg (+ 2))
 
 impMode :: AddresserBuilder
@@ -96,16 +96,15 @@ abyMode state = mapFst mode (loadWordIncPc state)
 iixMode :: AddresserBuilder
 iixMode s0 = do
     let (v1, s1) = loadByteIncPc s0
-    let v2 = byteToWord v1 + byteToWord (xReg s1)
-    let (v3, s2) = loadWordZeroPage v2 s1
-    (memoryMode v3, s2)
+    let (v2, s2) = loadWordZeroPage (v1 + xReg s1) s1
+    (memoryMode v2, s2)
 
 -- TODO: refactor these using composition operators
 
 iiyMode :: AddresserBuilder
 iiyMode s0 = do
     let (v1, s1) = loadByteIncPc s0
-    let (v2, s2) = loadWordZeroPage (byteToWord v1) s1
+    let (v2, s2) = loadWordZeroPage v1 s1
     let v3 = v2 + byteToWord (yReg s2)
     (memoryMode v3, s2)
 
@@ -228,7 +227,7 @@ jsr _ s0 = do
     let (addr, s1) = loadWordIncPc s0
     s1 |> pushWord (pcReg s1 - 1) |> setPCReg addr
 
-rts _ = popWord
+rts _ = pullWord
     .>> mapFst (+ 1)
     *>> setPCReg
 
@@ -242,22 +241,22 @@ brk _ = pcReg
     .>> loadWord breakVector
     *>> setPCReg
 
-rti _ = popByte
+rti _ = pullByte
     *>> setFlagReg
-    .>> popWord
+    .>> pullWord
     *>> setPCReg
 
 pha _ = aReg
     ->> pushByte
 
-pla _ = popByte
+pla _ = pullByte
     *>> setAReg
 
 php _ = flagReg
     .>> (.|.) breakMask
     ->> pushByte
 
-plp _ = popByte
+plp _ = pullByte
     *>> setFlagReg
 
 nop _ = id

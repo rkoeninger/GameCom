@@ -229,12 +229,10 @@ nextScanline runToCycle result state =
         else do
             let state2 = ifs ((< screenHeight) . scanline) renderScanline id state |> incScanline
             -- TODO: if vram.mapper.next_scanline() == ResultIrq then result.scanline_irq <- True
-            let (result2, state3) = if scanline state2 == vBlankScanline then
-                                        startVBlank result state2
-                                    else if scanline state2 == lastScanline then
-                                        (result { newFrameResult = True }, state2 { scanline = 0 } |> setInVBlank False)
-                                    else
-                                        (result, state2)
+            let (result2, state3)
+                  | scanline state2 == vBlankScanline = startVBlank result state2
+                  | scanline state2 == lastScanline   = (result { newFrameResult = True }, state2 { scanline = 0 } |> setInVBlank False)
+                  | otherwise                         = (result, state2)
             nextScanline runToCycle result2 state3
             -- debug_assert!(self.cy % CYCLES_PER_SCANLINE == 0, "at even scanline cycle");
 

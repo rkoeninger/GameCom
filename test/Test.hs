@@ -14,7 +14,7 @@ import GameCom
 stackIs xs state = search 0 xs state
     where search _ [] _ = return ()
           search i (x : xs) s0 =
-              let (b, s1) = CPU.popByte s0 in
+              let (b, s1) = CPU.pullByte s0 in
                   it "" (b `shouldBe` x) >> search (i + 1) xs s1
 
 pcRegIs   x state = it ("program counter should be " ++ show x) $ pcReg   state `shouldBe` x
