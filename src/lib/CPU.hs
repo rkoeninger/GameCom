@@ -94,20 +94,20 @@ abyMode state = mapFst mode (loadWordIncPc state)
              .>> memoryMode
 
 iixMode :: AddresserBuilder
-iixMode state = do
-    let (val, stat2) = loadByteIncPc state
-    let val2 = byteToWord val + byteToWord (xReg stat2)
-    let (val3, stat3) = loadWordZeroPage val2 stat2
-    (memoryMode val3, stat3)
+iixMode s0 = do
+    let (v1, s1) = loadByteIncPc s0
+    let v2 = byteToWord v1 + byteToWord (xReg s1)
+    let (v3, s2) = loadWordZeroPage v2 s1
+    (memoryMode v3, s2)
 
 -- TODO: refactor these using composition operators
 
 iiyMode :: AddresserBuilder
-iiyMode state = do
-    let (val, stat2) = loadByteIncPc state
-    let (val2, stat3) = loadWordZeroPage (byteToWord val) stat2
-    let val3 = val2 + byteToWord (yReg stat3)
-    (memoryMode val3, stat3)
+iiyMode s0 = do
+    let (v1, s1) = loadByteIncPc s0
+    let (v2, s2) = loadWordZeroPage (byteToWord v1) s1
+    let v3 = v2 + byteToWord (yReg s2)
+    (memoryMode v3, s2)
 
 lda (load, _)  = load *>> setAReg
 ldx (load, _)  = load *>> setXReg
@@ -116,29 +116,29 @@ sta (_, store) = aReg ->> store
 stx (_, store) = xReg ->> store
 sty (_, store) = yReg ->> store
 
-adc (load, _) stat2 = do
-    let (val, state) = load stat2
-    let a = aReg state
-    let resultWord = byteToWord a + byteToWord val + (if carryFlag state then 1 else 0)
+adc (load, _) s0 = do
+    let (val, s1) = load s0
+    let a = aReg s1
+    let resultWord = byteToWord a + byteToWord val + (if carryFlag s1 then 1 else 0)
     let resultByte = wordToByte resultWord
     let carry = testBit resultWord 8
     let overflow = (testBit a 7 == testBit val 7) && (testBit a 7 /= testBit resultByte 7)
-    state |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
+    s1 |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
 
-sbc (load, _) stat2 = do
-    let (val, state) = load stat2
-    let a = aReg state
-    let resultWord = byteToWord a - byteToWord val - (if carryFlag state then 0 else 1)
+sbc (load, _) s0 = do
+    let (val, s1) = load s0
+    let a = aReg s1
+    let resultWord = byteToWord a - byteToWord val - (if carryFlag s1 then 0 else 1)
     let resultByte = wordToByte resultWord
     let carry = not $ testBit resultWord 8
     let overflow = (testBit a 7 /= testBit val 7) && (testBit a 7 /= testBit resultByte 7)
-    state |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
+    s1 |> setAReg resultByte |> setCarryFlag carry |> setOverflowFlag overflow
 
 comp :: (MachineState -> Word8) -> Operation
-comp reg (load, _) stat2 = do
-    let (val, state) = load stat2
-    let result = byteToWord (reg state) - byteToWord val
-    state |> setZN (wordToByte result) |> setCarryFlag (testBit result 8)
+comp reg (load, _) s0 = do
+    let (val, s1) = load s0
+    let result = byteToWord (reg s1) - byteToWord val
+    s1 |> setZN (wordToByte result) |> setCarryFlag (testBit result 8)
 
 cmp = comp aReg
 cpx = comp xReg
@@ -148,39 +148,39 @@ add (load, _) = load .>> mapFst (.&.) *>> modifyAReg
 ora (load, _) = load .>> mapFst (.|.) *>> modifyAReg
 eor (load, _) = load .>> mapFst  xor  *>> modifyAReg
 
-bit (load, _) stat2 = do
-    let (val, state) = load stat2
-    let zero = val .&. aReg state == 0
+bit (load, _) s0 = do
+    let (val, s1) = load s0
+    let zero = val .&. aReg s1 == 0
     let overflow = testBit val overflowBit
     let negative = testBit val negativeBit
-    state |> setOverflowFlag overflow |> setNegativeFlag negative |> setZeroFlag zero
+    s1 |> setOverflowFlag overflow |> setNegativeFlag negative |> setZeroFlag zero
 
 shiftLeft :: Bool -> Operation
-shiftLeft lsb (load, store) stat2 = do
-    let (val, state) = load stat2
+shiftLeft lsb (load, store) s0 = do
+    let (val, s1) = load s0
     let carry = testBit val 7
-    let result = val `shiftL` 1 .|. (if lsb && carryFlag state then 0x01 else 0x00)
-    state |> setZN result |> setCarryFlag carry |> store result
+    let result = val `shiftL` 1 .|. (if lsb && carryFlag s1 then 0x01 else 0x00)
+    s1 |> setZN result |> setCarryFlag carry |> store result
 
 shiftRight :: Bool -> Operation
-shiftRight msb (load, store) stat2 = do
-    let (val, state) = load stat2
+shiftRight msb (load, store) s0 = do
+    let (val, s1) = load s0
     let carry = testBit val 0
-    let result = val `shiftR` 1 .|. (if msb && carryFlag state then 0x80 else 0x00)
-    state |> setZN result |> setCarryFlag carry |> store result
+    let result = val `shiftR` 1 .|. (if msb && carryFlag s1 then 0x80 else 0x00)
+    s1 |> setZN result |> setCarryFlag carry |> store result
 
 rol = shiftLeft  True
 ror = shiftRight True
 asl = shiftLeft  False
 lsr = shiftRight False
 
-inc (load, store) stat2 = do
-    let (val, state) = load stat2 |> mapFst (+ 1)
-    state |> setZN val |> store val
+inc (load, store) s0 = do
+    let (val, s1) = mapFst (+ 1) $ load s0
+    s1 |> setZN val |> store val
 
-dec (load, store) stat2 = do
-    let (val, state) = load stat2 |> mapFst (subtract 1)
-    state |> setZN val |> store val
+dec (load, store) s0 = do
+    let (val, s1) = mapFst (subtract 1) $ load s0
+    s1 |> setZN val |> store val
 
 inx _ = modifyXReg (+ 1)
 dex _ = modifyXReg (subtract 1)
@@ -216,15 +216,17 @@ jmp _ = loadWordIncPc
     *>> setPCReg
 
 -- NOTE: apparently there's a hack here for the hi byte made necessary by bug in 6502 chip ???
-jpi _ state = do
-    let (addr, stat2) = loadWordIncPc state
-    let (lo, stat3) = mapFst byteToWord $ loadByte addr stat2
-    let (hi, stat4) = mapFst byteToWord $ loadByte (addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff) stat3
-    setPCReg ((hi `shiftL` 8) .|. lo) stat4
+addrHack addr = addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff
 
-jsr _ stat2 = do
-    let (addr, state) = loadWordIncPc stat2
-    state |> pushWord (pcReg state - 1) |> setPCReg addr
+jpi _ s0 = do
+    let (addr, s1) = mapFst byteToWord $ loadByteIncPc s0
+    let (lo, s2) = loadByte addr s1
+    let (hi, s3) = loadByte (addrHack addr) s2
+    setPCReg (bytesToWord lo hi) s3
+
+jsr _ s0 = do
+    let (addr, s1) = loadWordIncPc s0
+    s1 |> pushWord (pcReg s1 - 1) |> setPCReg addr
 
 rts _ = popWord
     .>> mapFst (+ 1)

@@ -256,6 +256,20 @@ testShift = describe "Shift" $ do
         negativeFlagIs False state
 
 testStack = describe "Stack Operations" $ do
+    context "pushByte" $ do
+        let state = defaultState
+                    |> CPU.pushByte 0x12
+                    |> CPU.pushByte 0x34
+                    |> CPU.pushByte 0x56
+                    |> CPU.pushByte 0x78
+        stackIs [0x78, 0x56, 0x34, 0x12] state
+
+    context "pushWord" $ do
+        let state = defaultState
+                    |> CPU.pushWord 0x1234
+                    |> CPU.pushWord 0x5678
+        stackIs [0x78, 0x56, 0x34, 0x12] state
+
     context "pla" $ do
         let state = defaultState
                     |> CPU.pushByte 0x7e
