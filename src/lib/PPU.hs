@@ -238,4 +238,3 @@ nextScanline runToCycle result state =
 
 step :: MachineState -> (StepResult, MachineState)
 step state = nextScanline (cycleCount state) def state
-
