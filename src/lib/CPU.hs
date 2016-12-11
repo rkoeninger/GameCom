@@ -1,6 +1,5 @@
 module CPU (step, nmi, irq, pushWord, pushByte, popWord, popByte) where
 
-import Control.Arrow ((>>>))
 import Data.Bits ((.|.), (.&.), xor, shiftL, shiftR, testBit)
 import Data.Word (Word8, Word16)
 
@@ -14,12 +13,14 @@ type AddresserBuilder = MachineState -> (Addresser, MachineState)
 type Operation = Addresser -> MachineState -> MachineState
 
 loadByteIncPc :: MachineState -> (Word8, MachineState)
-loadByteIncPc = transfer pcReg loadByte
-            >>> mapSnd (modifyPCReg (+ 1))
+loadByteIncPc = pcReg
+            ->> loadByte
+            .>> mapSnd (modifyPCReg (+ 1))
 
 loadWordIncPc :: MachineState -> (Word16, MachineState)
-loadWordIncPc = transfer pcReg loadWord
-            >>> mapSnd (modifyPCReg (+ 2))
+loadWordIncPc = pcReg
+            ->> loadWord
+            .>> mapSnd (modifyPCReg (+ 2))
 
 loadWordZeroPage :: Word16 -> MachineState -> (Word16, MachineState)
 loadWordZeroPage addr = loadByte addr
@@ -65,19 +66,19 @@ memoryMode addr = (loader, storer)
 zpgMode :: AddresserBuilder
 zpgMode state = mapFst mode (loadByteIncPc state)
     where mode = byteToWord
-             >>> memoryMode
+             .>> memoryMode
 
 zpxMode :: AddresserBuilder
 zpxMode state = mapFst mode (loadByteIncPc state)
     where mode = (+ xReg state)
-             >>> byteToWord
-             >>> memoryMode
+             .>> byteToWord
+             .>> memoryMode
 
 zpyMode :: AddresserBuilder
 zpyMode state = mapFst mode (loadByteIncPc state)
     where mode = (+ yReg state)
-             >>> byteToWord
-             >>> memoryMode
+             .>> byteToWord
+             .>> memoryMode
 
 absMode :: AddresserBuilder
 absMode state = mapFst memoryMode (loadWordIncPc state)
@@ -85,12 +86,12 @@ absMode state = mapFst memoryMode (loadWordIncPc state)
 abxMode :: AddresserBuilder
 abxMode state = mapFst mode (loadWordIncPc state)
     where mode = (+ byteToWord (xReg state))
-             >>> memoryMode
+             .>> memoryMode
 
 abyMode :: AddresserBuilder
 abyMode state = mapFst mode (loadWordIncPc state)
     where mode = (+ byteToWord (yReg state))
-             >>> memoryMode
+             .>> memoryMode
 
 iixMode :: AddresserBuilder
 iixMode state = do

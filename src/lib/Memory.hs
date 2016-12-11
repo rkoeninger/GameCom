@@ -2,7 +2,6 @@
 
 module Memory where
 
-import Control.Arrow((>>>))
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
 import Data.Vector.Persistent (Vector, update, index, fromList)
 import Data.Word (Word8, Word16)
@@ -107,7 +106,7 @@ setPPUDataBuffer value state = state { ppuDataBuffer = value }
 
 setZN :: Word8 -> MachineState -> MachineState
 setZN value = setZeroFlag (value == 0)
-          >>> setNegativeFlag (testBit value 7)
+          .>> setNegativeFlag (testBit value 7)
 
 setFlag :: Word8 -> Bool -> MachineState -> MachineState
 setFlag mask value state = state { flagReg = op mask (flagReg state) }
@@ -152,21 +151,21 @@ breakFlag    = getFlag breakMask
 overflowFlag = getFlag overflowMask
 negativeFlag = getFlag negativeMask
 
-loadRAM        f state = mapSnd (`setRAM` state) (f (ram state))
+loadRAM        f state = mapSnd (`setRAM`        state) (f (ram state))
 loadNametables f state = mapSnd (`setNametables` state) (f (nametables state))
-loadPalette    f state = mapSnd (`setPalette` state) (f (palette state))
+loadPalette    f state = mapSnd (`setPalette`    state) (f (palette state))
 
-storeRAM        f = transfer (f . ram) setRAM
-storeNametables f = transfer (f . nametables) setNametables
-storePalette    f = transfer (f . palette) setPalette
+storeRAM        f = ram        .>> f ->> setRAM
+storeNametables f = nametables .>> f ->> setNametables
+storePalette    f = palette    .>> f ->> setPalette
 
-modifyAReg      f = transfer (f . aReg) setAReg
-modifyXReg      f = transfer (f . xReg) setXReg
-modifyYReg      f = transfer (f . yReg) setYReg
-modifySReg      f = transfer (f . sReg) setSReg
-modifyPCReg     f = transfer (f . pcReg) setPCReg
-modifyStatusReg f = transfer (f . statusReg) setStatusReg
-modifyPPUAddr   f = transfer (f . ppuAddr) setPPUAddr
+modifyAReg      f = aReg      .>> f ->> setAReg
+modifyXReg      f = xReg      .>> f ->> setXReg
+modifyYReg      f = yReg      .>> f ->> setYReg
+modifySReg      f = sReg      .>> f ->> setSReg
+modifyPCReg     f = pcReg     .>> f ->> setPCReg
+modifyStatusReg f = statusReg .>> f ->> setStatusReg
+modifyPPUAddr   f = ppuAddr   .>> f ->> setPPUAddr
 
 xScrollOffset              state =    testBit (controlReg state) 0
 yScrollOffset              state =    testBit (controlReg state) 1
@@ -244,8 +243,10 @@ loadPPUStatus :: MachineState -> (Word8, MachineState)
 loadPPUStatus state = (statusReg state, state { ppuAddrHi = True, ppuScrollDir = XDirection })
 
 storePPUDataByte :: Word8 -> MachineState -> MachineState
-storePPUDataByte value = transfer ppuAddr (`storeVramByte` value)
-                     >>> transfer ((+) . vramAddrIncrement) modifyPPUAddr
+storePPUDataByte value = ppuAddr
+                     ->> (`storeVramByte` value)
+                     .>> ((+) . vramAddrIncrement)
+                     ->> modifyPPUAddr
 
 loadPPUDataByte :: MachineState -> (Word8, MachineState)
 loadPPUDataByte state = if ppuAddr state < 0x3f00 then buffer normal else normal
@@ -258,14 +259,12 @@ class Storage m where
     loadByte :: Word16 -> m -> (Word8, m)
 
     loadWord :: Word16 -> m -> (Word16, m)
-    loadWord addr = loadByte addr
-                $>> loadByte (addr + 1)
-                .>> mapFst (uncurry bytesToWord)
+    loadWord addr = loadByte addr $>> loadByte (addr + 1) .>> mapFst (uncurry bytesToWord)
 
     storeByte :: Word16 -> Word8 -> m -> m
 
     storeWord :: Word16 -> Word16 -> m -> m
-    storeWord addr word = storeByte addr b0 >>> storeByte (addr + 1) b1
+    storeWord addr word = storeByte addr b0 .>> storeByte (addr + 1) b1
         where (b0, b1) = wordToBytes word
 
 instance Storage (Vector Word8) where
