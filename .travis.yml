@@ -5,6 +5,7 @@ env:
 language: haskell
 ghc: 8.0
 install:
+  - sudo apt-get install -y libsdl2
   - cabal install --only-dependencies --enable-tests
 script:
   - cabal configure --enable-tests
