@@ -17,6 +17,8 @@ stackIs xs state = search 0 xs state
               let (b, s1) = CPU.pullByte s0 in
                   it ("stack[" ++ show i ++ "] should be " ++ show x) (b `shouldBe` x) >> search (i + 1) xs s1
 
+valIs x y = it (show x ++ " should be " ++ show y) $ x `shouldBe` y
+
 pcRegIs   x state = it ("program counter should be " ++ show x) $ pcReg   state `shouldBe` x
 flagRegIs x state = it ("flag register should be "   ++ show x) $ flagReg state `shouldBe` x
 aRegIs    x state = it ("accumulator should be "     ++ show x) $ aReg    state `shouldBe` x
@@ -269,6 +271,20 @@ testStack = describe "Stack Operations" $ do
                     |> CPU.pushWord 0x1234
                     |> CPU.pushWord 0x5678
         stackIs [0x78, 0x56, 0x34, 0x12] state
+
+    context "pullByte" $ do
+        let (val, state) = defaultState
+                         |> CPU.pushByte 0xe5
+                         |> CPU.pullByte
+        sRegIs (sReg defaultState) state
+        valIs 0xe5 val
+
+    context "pullByte" $ do
+        let (val, state) = defaultState
+                         |> CPU.pushWord 0xa2e5
+                         |> CPU.pullWord
+        sRegIs (sReg defaultState) state
+        valIs 0xa2e5 val
 
     context "pla" $ do
         let state = defaultState
