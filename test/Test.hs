@@ -274,22 +274,22 @@ testStack = describe "Stack Operations" $ do
 
     context "pullByte" $ do
         let (val, state) = defaultState
-                         |> CPU.pushByte 0xe5
-                         |> CPU.pullByte
+                           |> CPU.pushByte 0xe5
+                           |> CPU.pullByte
         sRegIs (sReg defaultState) state
         valIs 0xe5 val
 
     context "pullByte" $ do
         let (val, state) = defaultState
-                         |> CPU.pushWord 0xa2e5
-                         |> CPU.pullWord
+                           |> CPU.pushWord 0xa2e5
+                           |> CPU.pullWord
         sRegIs (sReg defaultState) state
         valIs 0xa2e5 val
 
     context "pla" $ do
         let state = defaultState
                     |> CPU.pushByte 0x7e
-                    |> storeByte 0x10 0x68 -- pla
+                    |> storeByte 0x0010 0x68 -- pla
                     |> setPCReg 0x0010
                     |> CPU.step
         aRegIs 0x7e state
@@ -297,7 +297,7 @@ testStack = describe "Stack Operations" $ do
     context "plp" $ do
         let state = defaultState
                     |> CPU.pushByte 0x34
-                    |> storeByte 0x10 0x28 -- plp
+                    |> storeByte 0x0010 0x28 -- plp
                     |> setPCReg 0x0010
                     |> CPU.step
         flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
@@ -305,7 +305,7 @@ testStack = describe "Stack Operations" $ do
     context "pha" $ do
         let state = defaultState
                     |> setAReg 0x7e
-                    |> storeByte 0x10 0x48 -- pha
+                    |> storeByte 0x0010 0x48 -- pha
                     |> setPCReg 0x0010
                     |> CPU.step
         stackIs [0x7e] state
@@ -313,7 +313,7 @@ testStack = describe "Stack Operations" $ do
     context "php" $ do
         let state = defaultState
                     |> setFlagReg 0x34
-                    |> storeByte 0x10 0x08 -- php
+                    |> storeByte 0x0010 0x08 -- php
                     |> setPCReg 0x0010
                     |> CPU.step
         stackIs [0x34 .|. unusedMask] state
@@ -321,7 +321,7 @@ testStack = describe "Stack Operations" $ do
     context "rts" $ do
         let state = defaultState
                     |> CPU.pushWord 0x1234
-                    |> storeByte 0x10 0x60 -- rts
+                    |> storeByte 0x0010 0x60 -- rts
                     |> setPCReg 0x0010
                     |> CPU.step
         pcRegIs 0x1235 state
@@ -330,11 +330,23 @@ testStack = describe "Stack Operations" $ do
         let state = defaultState
                     |> CPU.pushWord 0x1234
                     |> CPU.pushByte 0x34
-                    |> storeByte 0x10 0x40 -- rti
+                    |> storeByte 0x0010 0x40 -- rti
                     |> setPCReg 0x0010
                     |> CPU.step
         pcRegIs 0x1234 state
         flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
+
+    {-context "brk" $ do
+        let state = defaultState
+                    |> storeByte 0x0010 0x00 -- brk
+                    |> setPCReg 0x0010
+                    |> setFlagReg 0x34
+        pcRegIs breakVector state -- nothing at breakvector - will fail
+        flagRegIs ((0x34 .|. unusedMask .|. irqMask) .&. complement breakMask) state
+
+    context "loadWord breakVector" $ do
+        let (val, state) = loadWord breakVector defaultState
+        valIs 0 val-}
 
 main = hspec $ do
     testROM
