@@ -291,6 +291,7 @@ instance Storage MachineState where
         | addr == 0x4015 = error "attempt to read from APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to read from Input 0x4016"
         | addr <= 0x4018 = error "attempt to read from APU 0x4018"
+        | addr == breakVector || addr == (breakVector + 1) = (0, state) -- TODO: implement (mapper?)
         | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr -- TODO: mapper?
 
     storeByte addr value state

@@ -336,17 +336,14 @@ testStack = describe "Stack Operations" $ do
         pcRegIs 0x1234 state
         flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
 
-    {-context "brk" $ do
+    context "brk" $ do
         let state = defaultState
                     |> storeByte 0x0010 0x00 -- brk
                     |> setPCReg 0x0010
                     |> setFlagReg 0x34
-        pcRegIs breakVector state -- nothing at breakvector - will fail
+                    |> CPU.step
+        pcRegIs 0 state -- temp implementation for reading from breakVector returns 0
         flagRegIs ((0x34 .|. unusedMask .|. irqMask) .&. complement breakMask) state
-
-    context "loadWord breakVector" $ do
-        let (val, state) = loadWord breakVector defaultState
-        valIs 0 val-}
 
 main = hspec $ do
     testROM
