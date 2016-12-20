@@ -231,12 +231,8 @@ rts _ = pullWord
     .>> mapFst (+ 1)
     *>> setPCReg
 
-brk _ = pcReg
-    .>> (+) 1
-    ->> pushWord
-    .>> flagReg
-    .>> (.|.) breakMask
-    ->> pushByte
+brk _ = ((pcReg .>> (+) 1) ->> pushWord)
+    .>> ((flagReg .>> (.|.) breakMask) ->> pushByte)
     .>> setIRQFlag True
     .>> loadWord breakVector
     *>> setPCReg

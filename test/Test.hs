@@ -344,6 +344,7 @@ testStack = describe "Stack Operations" $ do
                     |> CPU.step
         pcRegIs 0 state -- temp implementation for reading from breakVector returns 0
         flagRegIs ((0x34 .|. unusedMask .|. irqMask) .&. complement breakMask) state
+        stackIs [0x34 .|. breakMask, 0x12, 0x00] state
 
 main = hspec $ do
     testROM
