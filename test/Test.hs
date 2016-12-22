@@ -11,7 +11,7 @@ import qualified CPU
 import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
 import GameCom
 
-stackIs xs state = search 0 xs state
+stackIs = search 0
     where search _ [] _ = return ()
           search i (x : xs) s0 =
               let (b, s1) = CPU.pullByte s0 in
