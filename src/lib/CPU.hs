@@ -260,17 +260,13 @@ nop _ = id
 reset = loadWord resetVector
     *>> setPCReg
 
-nmi = pcReg
-  ->> pushWord
-  .>> flagReg
-  ->> pushByte
+nmi = (pcReg ->> pushWord)
+  .>> (flagReg ->> pushByte)
   .>> loadWord nmiVector
   *>> setPCReg
 
-irt = pcReg
-  ->> pushWord
-  .>> flagReg
-  ->> pushByte
+irt = (pcReg ->> pushWord)
+  .>> (flagReg ->> pushByte)
   .>> loadWord breakVector
   *>> setPCReg
 
