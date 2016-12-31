@@ -259,12 +259,15 @@ class Storage m where
     loadByte :: Word16 -> m -> (Word8, m)
 
     loadWord :: Word16 -> m -> (Word16, m)
-    loadWord addr = loadByte addr $>> loadByte (addr + 1) .>> mapFst (uncurry bytesToWord)
+    loadWord addr = loadByte addr
+                $>> loadByte (addr + 1)
+                .>> mapFst (uncurry bytesToWord)
 
     storeByte :: Word16 -> Word8 -> m -> m
 
     storeWord :: Word16 -> Word16 -> m -> m
-    storeWord addr word = storeByte addr b0 .>> storeByte (addr + 1) b1
+    storeWord addr word = storeByte addr b0
+                      .>> storeByte (addr + 1) b1
         where (b0, b1) = wordToBytes word
 
 instance Storage (Vector Word8) where

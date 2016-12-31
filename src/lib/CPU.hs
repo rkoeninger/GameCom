@@ -219,9 +219,11 @@ addrHack addr = addr .&. 0xff00 .|. (addr + 1) .&. 0x00ff
 
 jpi _ s0 = do
     let (addr, s1) = mapFst byteToWord $ loadByteIncPc s0
-    let (lo, s2) = loadByte addr s1
-    let (hi, s3) = loadByte (addrHack addr) s2
-    setPCReg (bytesToWord lo hi) s3
+    let loadIntoPc = loadByte addr
+                 $>> loadByte (addrHack addr)
+                 .>> mapFst (uncurry bytesToWord)
+                 *>> setPCReg
+    loadIntoPc s1
 
 jsr _ s0 = do
     let (addr, s1) = loadWordIncPc s0
