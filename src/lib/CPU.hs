@@ -262,17 +262,14 @@ nop _ = id
 reset = loadWord resetVector
     *>> setPCReg
 
-nmi = (pcReg ->> pushWord)
-  .>> (flagReg ->> pushByte)
-  .>> loadWord nmiVector
-  *>> setPCReg
+interrupt addr = (pcReg ->> pushWord)
+             .>> (flagReg ->> pushByte)
+             .>> loadWord addr
+             *>> setPCReg
 
-irt = (pcReg ->> pushWord)
-  .>> (flagReg ->> pushByte)
-  .>> loadWord breakVector
-  *>> setPCReg
+nmi = interrupt nmiVector
 
-irq = ifs irqFlag id irt
+irq = ifs irqFlag id (interrupt breakVector)
 
 step :: MachineState -> MachineState
 step = loadByteIncPc
