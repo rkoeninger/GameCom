@@ -5,7 +5,7 @@ module PPU (step, StepResult(..)) where
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
 import Data.Default (Default(..))
 import Data.Maybe (isJust)
-import Data.Vector.Persistent (Vector, index, update)
+import Data.Sequence (Seq, index, update)
 import Data.Word (Word8, Word16)
 
 import Base

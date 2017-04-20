@@ -3,7 +3,7 @@
 module Memory where
 
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
-import Data.Vector.Persistent (Vector, update, index, fromList)
+import Data.Sequence (Seq, update, index, fromList)
 import Data.Word (Word8, Word16)
 
 import Base
@@ -26,11 +26,11 @@ data PixelLayer = BackgroundLayer | SpriteLayer
 type Color = (Word8, Word8, Word8)
 type SpriteColor = (SpritePriority, Color)
 data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
-type Screen = Vector Color
+type Screen = Seq Color
 
 data MachineState = MachineState {
     cycleCount    :: Int,
-    ram           :: Vector Word8,
+    ram           :: Seq Word8,
     aReg          :: Word8,
     xReg          :: Word8,
     yReg          :: Word8,
@@ -42,7 +42,7 @@ data MachineState = MachineState {
     maskReg       :: Word8,
     statusReg     :: Word8,
     oamAddr       :: Word8,
-    oamData       :: Vector Word8,
+    oamData       :: Seq Word8,
     ppuAddr       :: Word16,
     ppuAddrHi     :: Bool,
     ppuScrollX    :: Word8,
@@ -50,9 +50,9 @@ data MachineState = MachineState {
     ppuScrollDir  :: ScrollDirection,
     ppuDataBuffer :: Word8,
     scanline      :: Int,
-    nametables    :: Vector Word8,
-    palette       :: Vector Word8,
-    screen        :: Vector Color
+    nametables    :: Seq Word8,
+    palette       :: Seq Word8,
+    screen        :: Seq Color
 }
 
 defaultState = MachineState {
@@ -270,7 +270,7 @@ class Storage m where
                       .>> storeByte (addr + 1) b1
         where (b0, b1) = wordToBytes word
 
-instance Storage (Vector Word8) where
+instance Storage (Seq Word8) where
     loadByte addr ram = (at addr ram, ram)
     storeByte = update . fromIntegral
 

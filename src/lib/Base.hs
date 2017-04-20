@@ -3,16 +3,14 @@ module Base where
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.Default (Default(..))
 import Data.Word (Word8, Word16)
-import Data.Vector.Persistent (Vector, index)
-import qualified Data.Vector.Persistent as P
+import Data.Sequence (Seq, index)
+import qualified Data.Sequence as S
 
-at :: (Integral n, Show n) => n -> Vector a -> a
-at i v = case index v (fromIntegral i) of
-    Just result -> result
-    _ -> error $ "invalid vector index: " ++ show i
+at :: (Integral n, Show n) => n -> Seq a -> a
+at i v = index v $ fromIntegral i
 
-vector :: Default d => Int -> Vector d
-vector n = P.fromList (replicate n def)
+vector :: Default d => Int -> Seq d
+vector n = S.fromList (replicate n def)
 
 mapFst :: (a -> b) -> (a, c) -> (b, c)
 mapFst f (x, y) = (f x, y)
