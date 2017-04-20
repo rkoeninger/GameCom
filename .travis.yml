@@ -25,7 +25,7 @@ before_install:
   - cd ..
 install:
   - cd GameCom
-#  - stack --no-terminal --install-ghc test --only-dependencies
+  - stack --no-terminal --install-ghc test --only-dependencies
 script:
   - true
-#  - stack --no-terminal test --haddock --no-haddock-deps
+  - stack --no-terminal test --haddock --no-haddock-deps
