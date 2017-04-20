@@ -1,12 +1,27 @@
 notifications:
   email: false
+sudo: false
+language: generic
+cache:
+  directories:
+    - $HOME/.stack
+addons:
+  apt:
+    packages:
+      - libgmp-dev
 env:
-  - CABALVER=1.24
-language: haskell
-ghc: 8.0
+  - LD_LIBRARY_PATH=/usr/local/lib
+before_install:
+  - mkdir -p ~/.local/bin
+  - export PATH=$HOME/.local/bin:$PATH
+  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  - cd ..
+  - wget -q http://www.libsdl.org/release/SDL2-2.0.3.tar.gz
+  - tar xf SDL2-*.tar.gz
+  - cd SDL2-* && ./configure && make && sudo make install && cd ..
 install:
-  - cabal install --only-dependencies --enable-tests
+  - cd GameCom
+#  - stack --no-terminal --install-ghc test --only-dependencies
 script:
-  - cabal configure --enable-tests
-  - cabal build
-  - cabal test
+  - true
+#  - stack --no-terminal test --haddock --no-haddock-deps
