@@ -27,5 +27,4 @@ install:
   - cd GameCom
   - stack --no-terminal --install-ghc test --only-dependencies
 script:
-  - true
   - stack --no-terminal test --haddock --no-haddock-deps
