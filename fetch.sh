@@ -6,7 +6,7 @@ FILE_NAME=SDL2-$SDL_VERSION.tar.gz
 wget -q http://www.libsdl.org/release/$FILE_NAME
 tar xf $FILE_NAME -C libsdl2
 rm 
-pushd libsdl2
+cd libsdl2
 ./configure
 make
-popd
+cd ..
