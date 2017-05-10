@@ -3,21 +3,15 @@ notifications:
 sudo: required
 language: generic
 env:
-  - LD_LIBRARY_PATH=/usr/local/lib
+  - LD_LIBRARY_PATH=libsdl2
 before_install:
+  # Download and install Haskell Stack
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
   - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
-#  - wget http://http.us.debian.org/debian/pool/main/libs/libsdl2/libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
-#  - sudo dpkg -i libsdl2-dev_2.0.5+dfsg1-2_amd64.deb # ERROR: doesn't retrieve transitive deps
-#  - cd ..
-#  - wget -q http://www.libsdl.org/release/SDL2-2.0.3.tar.gz
-#  - tar xf SDL2-*.tar.gz
-#  - cd SDL2-*
-#  - ./configure
-#  - make
-##  - make install
-#  - cd ..
+
+  # Download and build SDL
+  - ./fetch.sh
 install:
 #  - stack --no-terminal --install-ghc test --only-dependencies
    - true
