@@ -1,6 +1,6 @@
 #!/bin/sh
 
-SDL_VERSION=2.0.3
+SDL_VERSION=2.0.5
 FILE_NAME=SDL2-$SDL_VERSION.tar.gz
 
 wget -q http://www.libsdl.org/release/$FILE_NAME
