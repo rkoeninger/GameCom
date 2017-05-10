@@ -1,10 +1,7 @@
 notifications:
   email: false
-sudo: false
+sudo: required
 language: generic
-cache:
-  directories:
-    - $HOME/.stack
 env:
   - LD_LIBRARY_PATH=/usr/local/lib
 before_install:
@@ -12,7 +9,7 @@ before_install:
   - export PATH=$HOME/.local/bin:$PATH
   - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
   - wget http://http.us.debian.org/debian/pool/main/libs/libsdl2/libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
-  - dpkg -i libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
+  - sudo dpkg -i libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
 #  - cd ..
 #  - wget -q http://www.libsdl.org/release/SDL2-2.0.3.tar.gz
 #  - tar xf SDL2-*.tar.gz
