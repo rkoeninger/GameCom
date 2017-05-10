@@ -7,7 +7,7 @@ wget -q http://www.libsdl.org/release/$FILE_NAME
 mkdir -p libsdl2
 tar xf $FILE_NAME -C libsdl2
 rm $FILE_NAME
-cd libsdl2
+cd libsdl2/SDL2-$SDL_VERSION
 ./configure
 make
 cd ..
