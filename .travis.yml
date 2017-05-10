@@ -5,24 +5,22 @@ language: generic
 cache:
   directories:
     - $HOME/.stack
-addons:
-  apt:
-    packages:
-      - libgmp-dev
 env:
   - LD_LIBRARY_PATH=/usr/local/lib
 before_install:
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
   - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
-  - cd ..
-  - wget -q http://www.libsdl.org/release/SDL2-2.0.3.tar.gz
-  - tar xf SDL2-*.tar.gz
-  - cd SDL2-*
-  - ./configure
-  - make
-#  - make install
-  - cd ..
+  - wget http://http.us.debian.org/debian/pool/main/libs/libsdl2/libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
+  - dpkg -i libsdl2-dev_2.0.5+dfsg1-2_amd64.deb
+#  - cd ..
+#  - wget -q http://www.libsdl.org/release/SDL2-2.0.3.tar.gz
+#  - tar xf SDL2-*.tar.gz
+#  - cd SDL2-*
+#  - ./configure
+#  - make
+##  - make install
+#  - cd ..
 install:
   - cd GameCom
   - stack --no-terminal --install-ghc test --only-dependencies
