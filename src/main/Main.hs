@@ -13,7 +13,7 @@ screenWidth, screenHeight :: CInt
 main = do
     SDL.initialize [SDL.InitVideo]
 
-    window <- SDL.createWindow "SDL Tutorial" SDL.defaultWindow { SDL.windowInitialSize = V2 screenWidth screenHeight }
+    window <- SDL.createWindow "GameCom" SDL.defaultWindow { SDL.windowInitialSize = V2 screenWidth screenHeight }
     SDL.showWindow window
 
     screenSurface <- SDL.getWindowSurface window
@@ -21,8 +21,7 @@ main = do
     SDL.surfaceFillRect screenSurface Nothing white
     SDL.updateWindowSurface window
 
-    threadDelay 2000000
+    threadDelay 5000000
 
     SDL.destroyWindow window
     SDL.quit
-
