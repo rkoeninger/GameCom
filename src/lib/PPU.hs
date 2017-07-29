@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 
-module PPU (step, StepResult(..)) where
+module PPU (step, StepResult(..), getPixel) where
 
 import Data.Bits (Bits, (.|.), (.&.), complement, testBit, shiftL, shiftR)
 import Data.Default (Default(..))

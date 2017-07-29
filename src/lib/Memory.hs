@@ -26,7 +26,6 @@ data PixelLayer = BackgroundLayer | SpriteLayer
 type Color = (Word8, Word8, Word8)
 type SpriteColor = (SpritePriority, Color)
 data SpriteTile = Tile8x8 Word16 | Tile8x16 Word16 Word16
-type Screen = Seq Color
 
 data MachineState = MachineState {
     cycleCount    :: Int,

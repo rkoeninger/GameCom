@@ -16,8 +16,7 @@ source-repository head
   location: https://github.com/rkoeninger/GameCom
 
 library
-  exposed-modules:     Base, GameCom, Memory, CPU, ROM
-  other-modules:       APU, PPU
+  exposed-modules:     Base, GameCom, Memory, CPU, PPU, APU, ROM
   build-depends:       base, data-default, primitive, bytestring, attoparsec, containers
   hs-source-dirs:      src/lib
   ghc-options:         -fsimpl-tick-factor=800
