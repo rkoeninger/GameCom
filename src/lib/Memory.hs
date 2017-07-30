@@ -3,8 +3,10 @@
 module Memory where
 
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
+import Data.Default (Default(..))
 import Data.Sequence (Seq, update, index, fromList)
 import Data.Word (Word8, Word16)
+import ROM (ROM(..))
 
 import Base
 
@@ -51,35 +53,38 @@ data MachineState = MachineState {
     scanline      :: Int,
     nametables    :: Seq Word8,
     palette       :: Seq Word8,
-    screen        :: Seq Color
+    screen        :: Seq Color,
+    rom           :: ROM
 }
 
-defaultState = MachineState {
-    cycleCount    = 0,
-    ram           = vector 2048,
-    aReg          = 0x00,
-    xReg          = 0x00,
-    yReg          = 0x00,
-    sReg          = 0xfd,
-    flagReg       = unusedMask .|. irqMask,
-    pcReg         = 0xc000,
-    ppuCycleCount = 0,
-    controlReg    = 0x00,
-    maskReg       = 0x00,
-    statusReg     = 0x00,
-    oamAddr       = 0x00,
-    oamData       = vector 256,
-    ppuAddr       = 0x0000,
-    ppuAddrHi     = True,
-    ppuScrollX    = 0x00,
-    ppuScrollY    = 0x00,
-    ppuScrollDir  = XDirection,
-    ppuDataBuffer = 0x00,
-    scanline      = 0,
-    nametables    = vector 2048,
-    palette       = vector 32,
-    screen        = vector (256 * 240)
-}
+instance Default MachineState where
+    def = MachineState {
+        cycleCount    = 0,
+        ram           = vector 2048,
+        aReg          = 0x00,
+        xReg          = 0x00,
+        yReg          = 0x00,
+        sReg          = 0xfd,
+        flagReg       = unusedMask .|. irqMask,
+        pcReg         = 0xc000,
+        ppuCycleCount = 0,
+        controlReg    = 0x00,
+        maskReg       = 0x00,
+        statusReg     = 0x00,
+        oamAddr       = 0x00,
+        oamData       = vector 256,
+        ppuAddr       = 0x0000,
+        ppuAddrHi     = True,
+        ppuScrollX    = 0x00,
+        ppuScrollY    = 0x00,
+        ppuScrollDir  = XDirection,
+        ppuDataBuffer = 0x00,
+        scanline      = 0,
+        nametables    = vector 2048,
+        palette       = vector 32,
+        screen        = vector (256 * 240),
+        rom           = def
+    }
 
 addCycles cycles state = state { cycleCount = cycleCount state + cycles }
 addPPUCycles cycles state = state { ppuCycleCount = ppuCycleCount state + cycles }

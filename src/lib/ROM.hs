@@ -1,8 +1,9 @@
 module ROM (Mirroring(..), ROM(..), Region(..), parseROM) where
 
 import Data.Bits ((.|.), (.&.), shiftL, shiftR, testBit)
+import Data.Default (Default(..))
 import Data.Word (Word8, Word16)
-import Data.ByteString (ByteString, pack)
+import Data.ByteString (ByteString, pack, empty)
 import Data.Attoparsec.ByteString (word8, anyWord8, string)
 import Data.Attoparsec.ByteString as A
 
@@ -25,6 +26,21 @@ data ROM = ROM {
     prg        :: ByteString,
     chr        :: ByteString
 } deriving (Eq, Show)
+
+instance Default ROM where
+    def = ROM {
+        mirroring  = Horizontal,
+        trainer    = True,
+        persistent = False,
+        inesMapper = 0,
+        mapper     = 0,
+        playChoice = False,
+        unisystem  = False,
+        ramSize    = 0,
+        region     = NTSC,
+        prg        = empty,
+        chr        = empty
+    }
 
 pROM = do
     -- Header is 16 bytes
