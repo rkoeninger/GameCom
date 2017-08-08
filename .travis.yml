@@ -6,12 +6,12 @@ env:
   - LD_LIBRARY_PATH=libsdl2
 before_install:
   # Download and install Haskell Stack
-  - mkdir -p ~/.local/bin
-  - export PATH=$HOME/.local/bin:$PATH
-  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  #- mkdir -p ~/.local/bin
+  #- export PATH=$HOME/.local/bin:$PATH
+  #- travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
 
   # Download and build SDL
-  - ./fetch.sh
+  #- ./fetch.sh
 install:
 #  - stack --no-terminal --install-ghc test --only-dependencies
    - true
