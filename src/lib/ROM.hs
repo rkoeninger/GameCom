@@ -1,13 +1,13 @@
 module ROM (Mirroring(..), ROM(..), Region(..), parseROM) where
 
-import Data.Bits ((.|.), (.&.), shiftL, shiftR, testBit)
-import Data.Default (Default(..))
-import Data.Word (Word8, Word16)
-import Data.ByteString (ByteString, pack, empty)
+import Base
 import Data.Attoparsec.ByteString (word8, anyWord8, string)
 import Data.Attoparsec.ByteString as A
-
-import Base
+import Data.Bits ((.|.), (.&.), shiftL, shiftR, testBit)
+import Data.ByteString (ByteString, pack, unpack)
+import Data.Default (Default(..))
+import Data.Sequence (Seq, empty, fromList)
+import Data.Word (Word8, Word16)
 
 data Mirroring = Horizontal | Vertical | FourScreen deriving (Eq, Show)
 
@@ -23,8 +23,8 @@ data ROM = ROM {
     unisystem  :: Bool,
     ramSize    :: Word16,
     region     :: Region,
-    prg        :: ByteString,
-    chr        :: ByteString
+    prg        :: Seq Word8,
+    chr        :: Seq Word8
 } deriving (Eq, Show)
 
 instance Default ROM where
@@ -67,8 +67,8 @@ pROM = do
         unisystem  = testBit flags7 0,
         ramSize    = byteToWord ramSize8KB `shiftL` 13,
         region     = if testBit flags9 0 then PAL else NTSC,
-        prg = prgBytes,
-        chr = chrBytes
+        prg        = fromList $ unpack $ prgBytes,
+        chr        = fromList $ unpack $ chrBytes
     }
 
 parseROM :: ByteString -> Either String ROM

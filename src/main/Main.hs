@@ -7,6 +7,7 @@ import Control.Monad (forM_)
 import Data.Default (Default(..))
 import Foreign.C.Types
 import GameCom (step)
+import Mapper
 import Memory (MachineState(..), Color)
 import PPU (getPixel)
 import SDL.Vect
