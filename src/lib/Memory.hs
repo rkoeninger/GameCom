@@ -5,6 +5,7 @@ module Memory where
 import Data.Bits (Bits, (.|.), (.&.), shiftR, shiftL, complement, bit, testBit)
 import Data.Default (Default(..))
 import Data.Sequence (Seq, update, index, fromList)
+import Data.Sequence as S
 import Data.Word (Word8, Word16)
 import ROM (ROM(..))
 
@@ -278,6 +279,36 @@ instance Storage (Seq Word8) where
     loadByte addr ram = (at addr ram, ram)
     storeByte = update . fromIntegral
 
+data MapperResult = Continue | Irq
+
+-- TODO: support other mappers
+--        code not designed to generalize for other mappers
+
+data Mapper = NROM ROM
+
+loadPrgByte :: Word16 -> Mapper -> Word8
+loadPrgByte addr (NROM rom) = result
+    where result
+            | addr < 0x8000 =
+                0x08
+            | S.length (prg rom) > 16384 =
+                fst $ loadByte (addr .&. 0x7fff) (prg rom)
+            | otherwise =
+                fst $ loadByte (addr .&. 0x3fff) (prg rom)
+
+loadChrByte :: Word16 -> Mapper -> Word8
+loadChrByte addr (NROM rom) = result
+    where result = fst $ loadByte addr (chr rom)
+
+storePrgByte :: Word16 -> Word8 -> Mapper -> Mapper
+storePrgByte = error "Can't write to PRG ROM"
+
+storeChrByte :: Word16 -> Word8 -> Mapper -> Mapper
+storeChrByte = error "Can't write to CHR ROM"
+
+mapperNextScanline :: Mapper -> MapperResult
+mapperNextScanline _ = Continue
+
 instance Storage MachineState where
     loadByte addr state
         | addr <  0x2000 = loadRAM (loadByte (addr .&. 0x07ff)) state
@@ -298,8 +329,9 @@ instance Storage MachineState where
         | addr == 0x4015 = error "attempt to read from APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to read from Input 0x4016"
         | addr <= 0x4018 = error "attempt to read from APU 0x4018"
+        | addr <  0x6000 = (0, state) -- TODO: some mappers use this area?
         | addr == breakVector || addr == (breakVector + 1) = (0, state) -- TODO: implement (mapper?)
-        | otherwise = error $ "Storage MachineState loadByte: Address out of range: " ++ show addr -- TODO: mapper?
+        | otherwise      = (loadPrgByte addr (NROM (rom state)), state)
 
     storeByte addr value state
         | addr <  0x2000 = storeRAM (storeByte (addr .&. 0x07ff) value) state
@@ -320,4 +352,5 @@ instance Storage MachineState where
         | addr == 0x4015 = error "attempt to write to APU Status 0x4015" -- TODO: implement
         | addr == 0x4016 = error "attempt to write to Input 0x4016"
         | addr <= 0x4018 = error "attempt to write to APU 0x4018"
-        | otherwise = error $ "Storage MachineState storeByte: Address out of range: " ++ show addr -- TODO: mapper?
+        | addr <  0x6000 = state -- TODO: some mappers use this area?
+        | otherwise      = state -- TODO: Mapper0 doesn't store anyway --storePrgByte addr value (NROM (rom state))

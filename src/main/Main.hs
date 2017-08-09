@@ -7,7 +7,6 @@ import Control.Monad (forM_)
 import Data.Default (Default(..))
 import Foreign.C.Types
 import GameCom (step)
-import Mapper
 import Memory (MachineState(..), Color)
 import PPU (getPixel)
 import SDL.Vect
@@ -15,7 +14,7 @@ import qualified SDL
 
 width = 256
 height = 240
-scale = 2
+scale = 4
 
 draw :: MachineState -> SDL.Window -> IO ()
 draw state window =
