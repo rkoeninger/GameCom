@@ -15,6 +15,8 @@ import qualified SDL
 width = 256
 height = 240
 scale = 4
+frameDelayMs = 100
+endDelayMs = 5000000
 
 draw :: MachineState -> SDL.Window -> IO ()
 draw state window =
@@ -30,6 +32,17 @@ draw state window =
                                  (V2 scale scale)
                     SDL.surfaceFillRect surface (Just area) color)))
 
+loop :: MachineState -> SDL.Window -> Bool -> Int -> IO ()
+loop _ _ _ 0 = return ()
+loop state window newFrame n = do
+    if newFrame
+        then draw state window
+        else return ()
+    SDL.updateWindowSurface window
+    threadDelay frameDelayMs
+    let (newFrame', state') = step state
+    loop state' window newFrame' (n - 1)
+
 main :: IO ()
 main = do
     let state = def
@@ -41,10 +54,10 @@ main = do
                  { SDL.windowInitialSize = V2 (256 * scale) (240 * scale) }
     SDL.showWindow window
 
-    draw state window
-    SDL.updateWindowSurface window
+    loop state window True 1
 
-    threadDelay 5000000
+    putStrLn "Clock stopped"
+    threadDelay endDelayMs
 
     SDL.destroyWindow window
     SDL.quit
