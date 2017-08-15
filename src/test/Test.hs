@@ -1,15 +1,16 @@
 module Main where
 
+import Base
 import Control.Monad (forM_)
+import qualified CPU
 import Data.Bits ((.|.), (.&.), complement)
 import qualified Data.ByteString as B
-import Test.Hspec
-
-import Base
-import Memory
-import qualified CPU
-import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
+import Data.Default (Default(..))
+import qualified Data.Sequence as BS
 import GameCom
+import Memory
+import ROM (Mirroring(..), Region(..), ROM(..), parseROM)
+import Test.Hspec
 
 stackIs = search 0
     where search _ [] _ = return ()
@@ -44,26 +45,28 @@ testROM = describe "ROM" $
             unisystem = False,
             ramSize = 0,
             region = NTSC,
-            prg = B.empty,
-            chr = B.empty
+            prg = BS.empty,
+            chr = BS.empty
         }
         parseROM (B.pack bytes) `shouldBe` Right rom
 
 testMemory = describe "Memory" $ do
     it "words should be stored little-endian" $ do
-        let state = storeWord 0 0x8cf3 defaultState
+        let state = storeWord 0 0x8cf3 (def :: MachineState)
         fst (loadByte 0 state) `shouldBe` 0xf3
         fst (loadByte 1 state) `shouldBe` 0x8c
 
     it "words should be loaded little-endian" $ do
-        let state = storeByte 1 0x8c $ storeByte 0 0xf3 defaultState
+        let state = (def :: MachineState)
+                     |> storeByte 0 0xf3
+                     |> storeByte 1 0x8c
         fst (loadWord 0 state) `shouldBe` 0x8cf3
 
 arithmeticScenario a val carry f = do
     let opCode = case f 2 1 of
                  3 -> 0x69 -- adc/imd
                  1 -> 0xe9 -- sbc/imd
-    defaultState
+    def
         |> setAReg a
         |> setCarryFlag carry
         |> storeByte 0x10 opCode
@@ -137,7 +140,7 @@ testArithmetic = describe "Arithmetic" $ do
         carryFlagIs False state
 
 compareScenario a val =
-    defaultState
+    def
         |> setAReg a
         |> storeByte 0x10 0xc9 -- cmp/imd
         |> storeByte 0x11 val
@@ -167,7 +170,7 @@ rotateScenario a carry lr = do
     let opCode = case lr () of
                  Left  () -> 0x2a -- rol/acc
                  Right () -> 0x6a -- ror/acc
-    defaultState
+    def
         |> setAReg a
         |> setCarryFlag carry
         |> storeByte 0x10 opCode
@@ -221,7 +224,7 @@ shiftScenario a carry lr = do
     let opCode = case lr () of
                  Left  () -> 0x0a -- asl/acc
                  Right () -> 0x4a -- lsr/acc
-    defaultState
+    def
         |> setAReg a
         |> setCarryFlag carry
         |> storeByte 0x10 opCode
@@ -259,7 +262,7 @@ testShift = describe "Shift" $ do
 
 testStack = describe "Stack Operations" $ do
     context "pushByte" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushByte 0x12
                     |> CPU.pushByte 0x34
                     |> CPU.pushByte 0x56
@@ -267,27 +270,27 @@ testStack = describe "Stack Operations" $ do
         stackIs [0x78, 0x56, 0x34, 0x12] state
 
     context "pushWord" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushWord 0x1234
                     |> CPU.pushWord 0x5678
         stackIs [0x78, 0x56, 0x34, 0x12] state
 
     context "pullByte" $ do
-        let (val, state) = defaultState
+        let (val, state) = def
                            |> CPU.pushByte 0xe5
                            |> CPU.pullByte
-        sRegIs (sReg defaultState) state
+        sRegIs (sReg def) state
         valIs 0xe5 val
 
     context "pullByte" $ do
-        let (val, state) = defaultState
+        let (val, state) = def
                            |> CPU.pushWord 0xa2e5
                            |> CPU.pullWord
-        sRegIs (sReg defaultState) state
+        sRegIs (sReg def) state
         valIs 0xa2e5 val
 
     context "pla" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushByte 0x7e
                     |> storeByte 0x0010 0x68 -- pla
                     |> setPCReg 0x0010
@@ -295,7 +298,7 @@ testStack = describe "Stack Operations" $ do
         aRegIs 0x7e state
 
     context "plp" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushByte 0x34
                     |> storeByte 0x0010 0x28 -- plp
                     |> setPCReg 0x0010
@@ -303,7 +306,7 @@ testStack = describe "Stack Operations" $ do
         flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
 
     context "pha" $ do
-        let state = defaultState
+        let state = def
                     |> setAReg 0x7e
                     |> storeByte 0x0010 0x48 -- pha
                     |> setPCReg 0x0010
@@ -311,7 +314,7 @@ testStack = describe "Stack Operations" $ do
         stackIs [0x7e] state
 
     context "php" $ do
-        let state = defaultState
+        let state = def
                     |> setFlagReg 0x34
                     |> storeByte 0x0010 0x08 -- php
                     |> setPCReg 0x0010
@@ -319,7 +322,7 @@ testStack = describe "Stack Operations" $ do
         stackIs [0x34 .|. unusedMask] state
 
     context "rts" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushWord 0x1234
                     |> storeByte 0x0010 0x60 -- rts
                     |> setPCReg 0x0010
@@ -327,7 +330,7 @@ testStack = describe "Stack Operations" $ do
         pcRegIs 0x1235 state
 
     context "rti" $ do
-        let state = defaultState
+        let state = def
                     |> CPU.pushWord 0x1234
                     |> CPU.pushByte 0x34
                     |> storeByte 0x0010 0x40 -- rti
@@ -337,7 +340,7 @@ testStack = describe "Stack Operations" $ do
         flagRegIs ((0x34 .|. unusedMask) .&. complement breakMask) state
 
     context "brk" $ do
-        let state = defaultState
+        let state = def
                     |> storeByte 0x0010 0x00 -- brk
                     |> setPCReg 0x0010
                     |> setFlagReg 0x34
