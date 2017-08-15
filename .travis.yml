@@ -7,7 +7,7 @@ addons:
   apt:
     packages:
       - libsdl2-dev
-      - haskell-stack
+      - stack
 env:
   - LD_LIBRARY_PATH=libsdl2
 before_install:
