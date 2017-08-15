@@ -7,7 +7,6 @@ addons:
   apt:
     packages:
       - libsdl2-dev
-      - stack
 env:
   - LD_LIBRARY_PATH=libsdl2
 before_install:
