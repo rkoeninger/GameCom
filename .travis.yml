@@ -2,6 +2,7 @@ notifications:
   email: false
 sudo: required
 language: generic
+dist: trusty
 addons:
   apt:
     packages:
