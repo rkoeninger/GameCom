@@ -1,3 +1,5 @@
+[![GHC Version](https://img.shields.io/badge/GHC-8.0.2-5e5086.svg)](https://www.haskell.org/ghc/)
+[![Stackage Release](https://img.shields.io/badge/stack-lts--8.11-0981c3.svg)](https://www.stackage.org/lts-8.11)
 [![Build Status](https://travis-ci.org/rkoeninger/GameCom.svg?branch=master)](https://travis-ci.org/rkoeninger/GameCom)
 
 # GameCom
